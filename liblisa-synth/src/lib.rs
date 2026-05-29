@@ -37,7 +37,7 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 
 mod cond;
-mod gen;
+mod generate;
 mod normalizer;
 mod output;
 mod predicate;
@@ -315,7 +315,7 @@ where
     while !synthesizer.has_given_up() && num_ok < 5_000_000 {
         num_tried += 1;
 
-        let inputs = if rng.gen() {
+        let inputs = if rng.r#gen() {
             let base = randomized_value(rng);
             input_types.iter().map(|ty| randomize_ty_from(ty, base)).collect::<Vec<_>>()
         } else {

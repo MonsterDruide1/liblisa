@@ -58,7 +58,7 @@ impl<'a, A: Arch, O: Oracle<A>> ImmAnalysis<'a, A, O> {
             let location = index;
             match &mut current_change {
                 Change::ValueImm {
-                    output_indexes: ref mut locations,
+                    output_indexes: locations,
                     ..
                 } => {
                     if !locations.contains(&location) {
@@ -353,7 +353,7 @@ impl<'a, A: Arch, O: Oracle<A>> ImmAnalysis<'a, A, O> {
                         if old_value != new_value {
                             match &mut current_change {
                                 Change::ValueImm {
-                                    output_indexes: ref mut locations,
+                                    output_indexes: locations,
                                     ..
                                 } => {
                                     if !locations.contains(&output_index) {
@@ -824,7 +824,7 @@ impl<A: Arch> ThresholdValues<A> {
                             s.modify_dest(&source, |value| match value {
                                 MutValue::Num(n) => {
                                     if let Some(mask) = source.mask() {
-                                        *n = rng.gen::<u64>() & mask
+                                        *n = rng.r#gen::<u64>() & mask
                                     } else {
                                         *n = randomized_value(rng)
                                     }

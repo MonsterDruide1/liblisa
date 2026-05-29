@@ -12,7 +12,7 @@ use liblisa::utils::{bitmask_u64, Symmetric2DMatrix};
 use log::{debug, info, trace};
 use rand::Rng;
 
-use crate::gen::TestCaseGen;
+use crate::generate::TestCaseGen;
 use crate::output::extract_io;
 use crate::SynthesisResult;
 
@@ -152,11 +152,11 @@ pub fn determine_overlapping_write_order<A: Arch, C: Computation>(
             debug!("{c:X} = {encoding}");
             let mut priority = HashSet::new();
             for _ in 0..1000 {
-                let gen = TestCaseGen::new_raw(&encoding, &overlapping_vec, rng);
-                let gen = gen.as_ref().and_then(|gen| gen.with_mappable_area(&mappable_area, rng));
+                let generated = TestCaseGen::new_raw(&encoding, &overlapping_vec, rng);
+                let generated = generated.as_ref().and_then(|generated| generated.with_mappable_area(&mappable_area, rng));
 
-                if let Some(gen) = gen {
-                    for (state_in, state_out) in oracle.batch_observe_iter(gen.iter(rng, 10)) {
+                if let Some(generated) = generated {
+                    for (state_in, state_out) in oracle.batch_observe_iter(generated.iter(rng, 10)) {
                         if let Ok(state_out) = state_out {
                             trace!("{state_in:?} => {state_out:?}");
                             let written = overlapping
@@ -164,7 +164,7 @@ pub fn determine_overlapping_write_order<A: Arch, C: Computation>(
                                 .filter(|&&output_index| {
                                     let (inputs, output) = extract_io(
                                         output_index,
-                                        gen.instance(),
+                                        generated.instance(),
                                         &state_in.state,
                                         &state_in.part_values,
                                         &state_out,
@@ -301,7 +301,7 @@ fn resolve_order(order: &HashSet<After>) -> Option<Vec<usize>> {
     while let Some((next_index, _)) = output_indices
         .iter()
         .enumerate()
-        .filter(|(_, &output_index)| !order.iter().any(|v| v.0 == output_index))
+        .filter(|&(_, output_index)| !order.iter().any(|v| v.0 == *output_index))
         .min_by_key(|&(_, &x)| x)
     {
         let next = output_indices.remove(next_index);

@@ -156,7 +156,7 @@ impl<'a, 'i: 'a> RelationRef<'a, 'i> {
         self.caselist
             .cases_by_hash
             .iter()
-            .filter(move |(&other_hash, _)| query.check(hash, other_hash))
+            .filter(move |&(other_hash, _)| query.check(hash, *other_hash))
             .flat_map(|(_, case_indices)| case_indices.iter().copied())
             .filter(move |&case_index| {
                 caselist[case_index]

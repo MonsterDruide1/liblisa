@@ -280,7 +280,7 @@ impl<'a, A: Arch, M: MappableArea> BaseGenerator<'a, A, M> {
         }
     }
 
-    pub fn gen<O: Oracle<A>, R: Rng>(&mut self, oracle: &mut O, rng: &mut R) -> Result<(), AccessAnalysisError<A>> {
+    pub fn r#gen<O: Oracle<A>, R: Rng>(&mut self, oracle: &mut O, rng: &mut R) -> Result<(), AccessAnalysisError<A>> {
         let ps = oracle.page_size();
         #[derive(Debug)]
         struct MemoryGroup {
@@ -586,7 +586,7 @@ impl<'a, A: Arch, M: MappableArea> Relocatable<'a, A, M> {
             let (relocation_loc, relocation_shift) = inputs
                 .iter()
                 .zip(calculation.terms.iter())
-                .min_by_key(|(source, &shift)| {
+                .min_by_key(|(source, shift)| {
                     if shift.minimum_step_size() == 1 {
                         state_gen.accesses.iter().filter(|a| a.inputs.contains(source)).count()
                     } else {
@@ -886,7 +886,7 @@ impl MemoryAccessAnalysis {
     ) -> Result<MemoryAccesses<A>, AccessAnalysisError<A>> {
         info!("Inferring accesses for {instr:X}");
         let mappable = o.mappable_area();
-        let mut rng = Xoshiro256PlusPlus::seed_from_u64(rand::thread_rng().gen());
+        let mut rng = Xoshiro256PlusPlus::seed_from_u64(rand::thread_rng().r#gen());
         let mut accesses: MemoryAccesses<A> = MemoryAccesses {
             instr: *instr,
             memory: vec![MemoryAccess {
@@ -917,7 +917,7 @@ impl MemoryAccessAnalysis {
 
             let state_gen = StateGen::new(&accesses, &mappable)?;
             let mut base_gen = BaseGenerator::new(&state_gen);
-            base_gen.gen(o, &mut rng)?;
+            base_gen.r#gen(o, &mut rng)?;
             let bases = base_gen.bases;
             let oks = base_gen.oks;
             let unaddressable = base_gen.unaddressable;

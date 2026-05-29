@@ -927,7 +927,7 @@ impl<'borrow, A: Arch, O: Oracle<A> + 'borrow, C: EncodingAnalysisCache<A>> Enco
         o: &'a mut O, cache: &'a C, original_dataflows: &'a Dataflows<A, ()>,
     ) -> Result<Encoding<A, ()>, EncodingError<A>> {
         info!("Inferring encoding for {}", original_dataflows);
-        let mut rng = Xoshiro256PlusPlus::seed_from_u64(rand::thread_rng().gen());
+        let mut rng = Xoshiro256PlusPlus::seed_from_u64(rand::thread_rng().r#gen());
         let mappable_area = o.mappable_area();
         let state_gen = StateGen::new(&original_dataflows.addresses, &mappable_area)?;
         let threshold_values = cache.infer_threshold_values(o, original_dataflows, &state_gen);

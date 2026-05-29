@@ -13,7 +13,7 @@ use log::{debug, info, trace};
 use rand::seq::SliceRandom;
 use rand::Rng;
 
-use crate::gen::{TestCase, TestCaseGen};
+use crate::generate::{TestCase, TestCaseGen};
 use crate::output::{OracleRequester, Output};
 use crate::{CachedRequester, SynthesisResult, Synthesizer};
 
@@ -313,12 +313,12 @@ where
 
             info!("k={k:?}");
 
-            let gen = self.gen_testcases(rng);
-            let gen = gen.as_ref().and_then(|gen| gen.with_mappable_area(&mappable_area, rng));
+            let generated = self.gen_testcases(rng);
+            let generated = generated.as_ref().and_then(|generated| generated.with_mappable_area(&mappable_area, rng));
 
-            if let Some(gen) = gen {
+            if let Some(generated) = generated {
                 let mut num = 0;
-                for (state_in, state_out) in oracle.batch_observe_iter(gen.iter(rng, 1000)) {
+                for (state_in, state_out) in oracle.batch_observe_iter(generated.iter(rng, 1000)) {
                     num += 1;
                     if self.timeout_at.is_timed_out() {
                         break
@@ -335,7 +335,7 @@ where
                                 continue;
                             }
 
-                            if !item.check_and_add_if_possible(gen.instance(), &state_in, &state_out) {
+                            if !item.check_and_add_if_possible(generated.instance(), &state_in, &state_out) {
                                 trace!(
                                     "Queueing case for output #{} (total queued: {})",
                                     item.output.output_index,
@@ -366,7 +366,7 @@ where
                             break;
                         }
 
-                        synthesizer.check_and_add_with_requester(gen.instance(), &state_in, &state_out, oracle);
+                        synthesizer.check_and_add_with_requester(generated.instance(), &state_in, &state_out, oracle);
                     }
                 }
 

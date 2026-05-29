@@ -139,15 +139,15 @@ impl<A: Arch, M: MappableArea> TestCaseGenWithBase<'_, A, M> {
         self.inner.instance()
     }
 
-    fn generate_cases_with_equalities<'l>(&'l self, rng: &mut impl Rng) -> impl Iterator<Item = TestCase<A>> + 'l {
-        let mut rng2 = Xoshiro256PlusPlus::seed_from_u64(rng.gen());
-        let mut rng3 = Xoshiro256PlusPlus::seed_from_u64(rng.gen());
+    fn generate_cases_with_equalities<'l, T: Rng>(&'l self, rng: &mut T) -> impl Iterator<Item = TestCase<A>> + 'l + use<'l, A, M, T> {
+        let mut rng2 = Xoshiro256PlusPlus::seed_from_u64(rng.r#gen());
+        let mut rng3 = Xoshiro256PlusPlus::seed_from_u64(rng.r#gen());
         repeat_with(move || self.inner.instance().output_dataflows().choose(&mut rng3))
             .take(250)
             .flatten()
             .flat_map(move |dataflow| {
                 if dataflow.inputs.len() > 1 && dataflow.inputs.iter().any(|s| s.can_modify()) {
-                    let mut rng = Xoshiro256PlusPlus::seed_from_u64(rng2.gen());
+                    let mut rng = Xoshiro256PlusPlus::seed_from_u64(rng2.r#gen());
 
                     Some(
                         repeat_with(move || {
@@ -181,7 +181,7 @@ impl<A: Arch, M: MappableArea> TestCaseGenWithBase<'_, A, M> {
                                                 bytes.copy_from_slice(instr.bytes());
                                             });
 
-                                            let as_le = rng.gen();
+                                            let as_le = rng.r#gen();
                                             let (val, num_bytes_in_val) = match source2 {
                                                 Source::Imm(index) => (
                                                     OwnedValue::Num(part_values[*index]),
@@ -201,7 +201,7 @@ impl<A: Arch, M: MappableArea> TestCaseGenWithBase<'_, A, M> {
                                                 }
                                             });
 
-                                            if rng.gen() {
+                                            if rng.r#gen() {
                                                 let mask = source1_as_dest.mask();
                                                 let num_bits = mask
                                                     .map(|m| 64 - m.leading_zeros() as u64)
@@ -246,9 +246,9 @@ impl<A: Arch, M: MappableArea> TestCaseGenWithBase<'_, A, M> {
     }
 
     fn generate_cases_from_interesting_inputs<'l>(&'l self, rng: &mut impl Rng) -> impl Iterator<Item = TestCase<A>> + 'l {
-        let mut rng = Xoshiro256PlusPlus::seed_from_u64(rng.gen());
+        let mut rng = Xoshiro256PlusPlus::seed_from_u64(rng.r#gen());
         self.inner.interesting_inputs.iter().flat_map(move |(index, inputs)| {
-            let mut rng = Xoshiro256PlusPlus::seed_from_u64(rng.gen());
+            let mut rng = Xoshiro256PlusPlus::seed_from_u64(rng.r#gen());
             repeat_with(move || {
                 let mut state = self
                     .state_gen
@@ -276,12 +276,12 @@ impl<A: Arch, M: MappableArea> TestCaseGenWithBase<'_, A, M> {
                     let num_bits = self.inner.encoding.parts[imm_index].size;
                     let num_bytes = (num_bits + 7) / 8;
                     let mask = !(u64::MAX << num_bits);
-                    match rng.gen::<u8>() & 3 {
+                    match rng.r#gen::<u8>() & 3 {
                         // Modify entire dest
                         0 => part_values[imm_index] = randomized_value(&mut rng) & mask,
                         // Modify single byte
                         1 => {
-                            let new_byte = rng.gen::<u8>() as u64;
+                            let new_byte = rng.r#gen::<u8>() as u64;
                             part_values[imm_index] =
                                 (part_values[imm_index] ^ (new_byte << (rng.gen_range(0..num_bytes) * 8))) & mask;
                         },
@@ -308,7 +308,7 @@ impl<A: Arch, M: MappableArea> TestCaseGenWithBase<'_, A, M> {
                     let num_bytes = size.num_bytes();
                     let num_bits = num_bytes * 8;
                     let u64_mask = source1_as_dest.mask().unwrap_or(u64::MAX >> (64 - num_bits));
-                    match rng.gen::<u8>() & 3 {
+                    match rng.r#gen::<u8>() & 3 {
                         // Modify entire dest
                         0 => state.modify_dest(source1_as_dest, |target| match target {
                             MutValue::Num(n) => *n = randomized_value(&mut rng) & u64_mask,
@@ -319,12 +319,12 @@ impl<A: Arch, M: MappableArea> TestCaseGenWithBase<'_, A, M> {
                             let mask = source1_as_dest.mask();
                             match target {
                                 MutValue::Num(n) => {
-                                    let new_byte = rng.gen::<u8>() as u64;
+                                    let new_byte = rng.r#gen::<u8>() as u64;
                                     *n = (*n ^ (new_byte << (rng.gen_range(0..num_bytes) * 8))) & mask.unwrap_or(u64::MAX)
                                 },
                                 MutValue::Bytes(b) => {
                                     let byte = rng.gen_range(0..num_bytes);
-                                    b[byte] = rng.gen();
+                                    b[byte] = rng.r#gen();
                                 },
                             }
                         }),
@@ -333,7 +333,7 @@ impl<A: Arch, M: MappableArea> TestCaseGenWithBase<'_, A, M> {
                             let index = rng.gen_range(0..num_bytes);
 
                             let original_value = state.get_dest(source1_as_dest).select_byte(index);
-                            let new_value = rng.gen::<u8>();
+                            let new_value = rng.r#gen::<u8>();
 
                             for source in dataflow.inputs.iter() {
                                 if let Source::Dest(dest) = source {
@@ -402,8 +402,8 @@ impl<A: Arch, M: MappableArea> TestCaseGenWithBase<'_, A, M> {
     }
 
     pub fn iter(&self, rng: &mut impl Rng, scale_factor: usize) -> impl Iterator<Item = TestCase<A>> + '_ {
-        let mut rng1 = Xoshiro256PlusPlus::seed_from_u64(rng.gen());
-        let mut rng2 = Xoshiro256PlusPlus::seed_from_u64(rng.gen());
+        let mut rng1 = Xoshiro256PlusPlus::seed_from_u64(rng.r#gen());
+        let mut rng2 = Xoshiro256PlusPlus::seed_from_u64(rng.r#gen());
         let test_cases = repeat_with(move || {
             self.state_gen
                 .randomize_new_with_locations(&self.base_state, &self.inner.locations, &mut rng1)

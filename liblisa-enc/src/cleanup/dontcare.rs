@@ -186,14 +186,14 @@ impl<'a, A: Arch> DontCareValidator<'a, A> {
         );
 
         let mut num_errs = 0;
-        let mut rng = Xoshiro256PlusPlus::seed_from_u64(rand::thread_rng().gen());
+        let mut rng = Xoshiro256PlusPlus::seed_from_u64(rand::thread_rng().r#gen());
         let mut validity_cache = HashMap::new();
         for num_inst in 0..500 {
             debug!("DontCare validation step: {num_inst} / 500");
             let part_values = encoding
                 .parts
                 .iter()
-                .map(|part| rng.gen::<u64>() & ((1 << part.size) - 1))
+                .map(|part| rng.r#gen::<u64>() & ((1 << part.size) - 1))
                 .collect::<Vec<_>>();
             if let Ok(instance) = encoding.instantiate(&part_values) {
                 debug!("Checking instance {instance}");
@@ -272,7 +272,7 @@ impl<'a, A: Arch> DontCareValidator<'a, A> {
     ) -> impl Iterator<Item = (usize, Instruction)> + 'x {
         (0..(1usize << dont_care_indices.len().min(14))).map(move |value| {
             let value = if randomize {
-                rng.gen::<usize>() & ((1usize << dont_care_indices.len()) - 1)
+                rng.r#gen::<usize>() & ((1usize << dont_care_indices.len()) - 1)
             } else {
                 value
             };

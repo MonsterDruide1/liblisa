@@ -167,9 +167,9 @@ impl<A: Arch> SynthesizeCommand<A> {
                 // Clear the artifacts file that might still store previous entries
                 File::create(self.artifact_path()).unwrap();
             },
-            Verb::Run {
+            &Verb::Run {
                 threads,
-                mut ramp_up,
+                ref ramp_up,
             } => {
                 println!("Loading base data...");
                 let file = File::open(self.state_path()).unwrap();
@@ -247,7 +247,7 @@ impl<A: Arch> SynthesizeCommand<A> {
                                                 pool.resize(num);
                                                 println!("Thread pool resized to {num}");
 
-                                                if ramp_up.take().is_some() {
+                                                if ramp_up.as_ref().is_some() {
                                                     println!("Ramp-up cancelled because of manual input");
                                                 }
                                             },
@@ -263,7 +263,7 @@ impl<A: Arch> SynthesizeCommand<A> {
                             if last_ramp_up.elapsed() >= Duration::from_secs(30 * 60) {
                                 if let Some(ramp_up) = ramp_up {
                                     let current = pool.current_num_threads();
-                                    let new_num = (current + 4).min(ramp_up);
+                                    let new_num = (current + 4).min(*ramp_up);
                                     pool.resize(new_num);
                                 }
 

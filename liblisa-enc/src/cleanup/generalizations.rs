@@ -31,8 +31,8 @@ impl<A: Arch> AsSystemState<A> for Test<'_, A> {
 
 pub fn remove_incorrect_generalizations<A: Arch, O: Oracle<A>>(o: &mut O, encoding: &mut Encoding<A, ()>) -> bool {
     info!("Removing incorrect generalizations...");
-    let mut rng = Xoshiro256PlusPlus::seed_from_u64(rand::thread_rng().gen());
-    let mut rng2 = Xoshiro256PlusPlus::seed_from_u64(rand::thread_rng().gen());
+    let mut rng = Xoshiro256PlusPlus::seed_from_u64(rand::thread_rng().r#gen());
+    let mut rng2 = Xoshiro256PlusPlus::seed_from_u64(rand::thread_rng().r#gen());
     let mappable = o.mappable_area();
     let mut changed = false;
 
@@ -47,7 +47,7 @@ pub fn remove_incorrect_generalizations<A: Arch, O: Oracle<A>>(o: &mut O, encodi
             let part_values = encoding
                 .parts
                 .iter()
-                .map(|part| rng.gen::<u64>() & ((1 << part.size) - 1))
+                .map(|part| rng.r#gen::<u64>() & ((1 << part.size) - 1))
                 .collect::<Vec<_>>();
             if let Ok(instance) = encoding.instantiate(&part_values) {
                 let validity = Validity::infer(o, instance.instr());

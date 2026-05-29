@@ -330,7 +330,7 @@ impl SynthesisPlanBuilder<'_> {
         // Normally, we include all cases. However, we exclude:
         let match_true_cases = match_true_group_indices
             .iter()
-            .flat_map(|&group_index| self.cases.group(group_index).case_indices())
+            .flat_map(|&group_index| self.cases.group(group_index).case_indices().collect::<Vec<_>>())
             // Exclude cases th: &CaseIndexat we have already matched (this only happens when a case belongs to multiple groups)
             .filter(|case_index| !self.cases_done[case_index.as_usize()])
             .filter(|case_index| {
@@ -359,7 +359,7 @@ impl SynthesisPlanBuilder<'_> {
                 let match_false_cases = match_false_group_indices
                     .iter()
                     .map(|&index| self.cases.group(index))
-                    .flat_map(|group| group.case_indices())
+                    .flat_map(|group| group.case_indices().collect::<Vec<_>>())
                     // Exclude cases that could also be in one of the groups we're match_true'ing
                     .filter(|case_index| {
                         !self.cases[case_index]

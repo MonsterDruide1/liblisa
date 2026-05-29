@@ -111,7 +111,7 @@ impl<'a, 'borrow, A: Arch, M: MappableArea> Fuzz<'a, 'borrow, A, M> {
         let mut state = state_gen.randomize_new(rng).unwrap();
         match rng.gen_range(0..10usize) {
             0 => {
-                let filled_byte = rng.gen();
+                let filled_byte = rng.r#gen();
                 state_gen.fill_with_byte(rng, &mut state, filled_byte);
             },
             1 => {
@@ -262,7 +262,7 @@ impl<'a, 'borrow, A: Arch, M: MappableArea> Fuzz<'a, 'borrow, A, M> {
                                 .unwrap_or(u64::MAX)
                                 .checked_shr(index as u32 * 8)
                                 .unwrap_or(u64::MAX) as u8;
-                            let new = rng.gen::<u8>() & mask;
+                            let new = rng.r#gen::<u8>() & mask;
                             self.view.set(state, b, new);
                             if new != old {
                                 changed.push(b);
@@ -307,7 +307,7 @@ impl<'a, 'borrow, A: Arch, M: MappableArea> Fuzz<'a, 'borrow, A, M> {
 
             // Strategy 3: For each dataflow: change only the bytes that we are filling in (see above)
             // for sources in filled_dataflows.iter()
-            let mut rng = Xoshiro256PlusPlus::seed_from_u64(rng.gen());
+            let mut rng = Xoshiro256PlusPlus::seed_from_u64(rng.r#gen());
             let view = self.view;
             let fill_in_test = filled_dataflows.iter().filter_map(move |sources| {
                 let mut changed = Vec::new();
@@ -321,7 +321,7 @@ impl<'a, 'borrow, A: Arch, M: MappableArea> Fuzz<'a, 'borrow, A, M> {
                                 .unwrap_or(u64::MAX)
                                 .checked_shr(index as u32 * 8)
                                 .unwrap_or(u64::MAX) as u8;
-                            let new = rng.gen::<u8>() & mask;
+                            let new = rng.r#gen::<u8>() & mask;
                             view.set(state, b, new);
 
                             if new != old {
@@ -380,7 +380,7 @@ impl<'a, 'borrow, A: Arch, M: MappableArea> Fuzz<'a, 'borrow, A, M> {
 
         // TODO: What instr benefits from this fuzzing?
         let view = self.view;
-        let rng = RefCell::new(Xoroshiro128PlusPlus::seed_from_u64(rng.gen()));
+        let rng = RefCell::new(Xoroshiro128PlusPlus::seed_from_u64(rng.r#gen()));
         let rng = &rng;
         let unique_sources = &unique_sources;
         let state_gen = &self.state_gen;

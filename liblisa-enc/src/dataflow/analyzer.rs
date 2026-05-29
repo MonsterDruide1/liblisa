@@ -123,7 +123,7 @@ pub fn modify_state_with_spec<A: Arch, R: Rng>(
                     MutValue::Num(orig) => {
                         let mut new_val = *orig;
                         if let Some(mask) = reg.mask() {
-                            let alt_val: u64 = rng.gen();
+                            let alt_val: u64 = rng.r#gen();
                             for &byte in bytes {
                                 assert!(byte < 8);
                                 let mask = (0xFF << (byte * 8)) & mask;
@@ -136,7 +136,7 @@ pub fn modify_state_with_spec<A: Arch, R: Rng>(
                                     let base = *orig & mask;
                                     let mut new_byte = alt_val & mask;
                                     while new_byte == base {
-                                        new_byte = rng.gen::<u64>() & mask;
+                                        new_byte = rng.r#gen::<u64>() & mask;
                                     }
 
                                     new_byte
@@ -267,7 +267,7 @@ pub fn modify_state_with_spec_possibly_eq<A: Arch, R: Rng>(
                         debug_assert_eq!(*orig & !reg_mask, 0);
                         let mask = full_mask & reg_mask;
                         let new_val = if reg.mask().is_some() {
-                            rng.gen()
+                            rng.r#gen()
                         } else {
                             randomized_value(rng)
                         };
