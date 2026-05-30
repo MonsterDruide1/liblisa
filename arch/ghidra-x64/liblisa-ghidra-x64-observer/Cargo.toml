@@ -1,0 +1,21 @@
+[package]
+name = "liblisa-ghidra-x64-observer"
+version = "0.1.0"
+edition = "2021"
+description = "A tool for automated discovery and analysis of the ISA of Ghidra."
+license = "AGPL-3.0-only"
+documentation = "https://docs.liblisa.nl/"
+homepage = "https://liblisa.nl/"
+repository = "https://github.com/liblisa/liblisa"
+include = [
+    "src/**/*.rs",
+    "tests/**/*.rs",
+    "examples/**/*.rs",
+    "benches/**/*.rs",
+    "build.rs",
+    "Cargo.toml",
+]
+
+[dependencies]
+itertools = "0.12.0"
+liblisa = { version = "0.1.0", path = "../../../liblisa" }

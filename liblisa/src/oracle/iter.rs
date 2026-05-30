@@ -4,7 +4,7 @@ use super::{Observation, Oracle};
 use crate::arch::Arch;
 use crate::state::AsSystemState;
 
-pub(crate) struct FallbackBatchObserveIter<'a, A: Arch, O: Oracle<A>, S: AsSystemState<A>, I: Iterator<Item = S>> {
+pub struct FallbackBatchObserveIter<'a, A: Arch, O: Oracle<A>, S: AsSystemState<A>, I: Iterator<Item = S>> {
     oracle: &'a mut O,
     iter: I,
     _phantom: PhantomData<A>,

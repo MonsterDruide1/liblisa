@@ -1,0 +1,24 @@
+[package]
+name = "liblisa-ghidra-x64"
+version = "0.1.0"
+edition = "2021"
+description = "A tool for automated discovery and analysis of the ISA of Ghidra."
+license = "AGPL-3.0-only"
+documentation = "https://docs.liblisa.nl/"
+homepage = "https://liblisa.nl/"
+repository = "https://github.com/liblisa/liblisa"
+
+[features]
+default = ["nolog"]
+nolog = ["log/release_max_level_off"]
+
+[dependencies]
+env_logger = "0.10"
+liblisa-libcli = { version = "0.1.0", path = "../../cli/liblisa-libcli" }
+liblisa = { version = "0.1.0", path = "../../liblisa" }
+liblisa-ghidra-x64-observer = { version = "0.1.0", path = "../../arch/ghidra-x64/liblisa-ghidra-x64-observer" }
+clap = { version = "4.4.8", features = ["derive"] }
+log = "0.4.0"
+
+[dev-dependencies]
+test-log = "0.2.10"

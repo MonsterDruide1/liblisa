@@ -18,7 +18,7 @@ mod verifier;
 
 pub use careful::CarefulOracle;
 pub use counter::InvocationCountingOracle;
-pub(crate) use iter::FallbackBatchObserveIter;
+pub use iter::FallbackBatchObserveIter;
 pub use verifier::VerifyOracle;
 
 /// Error returned when an error occurs in an [`Oracle`] during instruction observation.

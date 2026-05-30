@@ -909,6 +909,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "liblisa-ghidra-x64"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "env_logger 0.10.2",
+ "liblisa",
+ "liblisa-ghidra-x64-observer",
+ "liblisa-libcli",
+ "log",
+ "test-log",
+]
+
+[[package]]
+name = "liblisa-ghidra-x64-observer"
+version = "0.1.0"
+dependencies = [
+ "itertools 0.12.1",
+ "liblisa",
+]
+
+[[package]]
 name = "liblisa-libcli"
 version = "0.1.0"
 dependencies = [

@@ -9,9 +9,11 @@ members = [
     # Architecture-specific
     "arch/x64/liblisa-x64-observer",
     "arch/x64/liblisa-x64-observer-shmqueue",
+    "arch/ghidra-x64/liblisa-ghidra-x64-observer",
 
     # CLI tools
     "cli/liblisa-x64",
+    "cli/liblisa-ghidra-x64",
     "cli/liblisa-libcli",
     "cli/liblisa-semantics-tool", "arch/x64/build-vmimage",
 ]
@@ -29,4 +31,7 @@ opt-level = 3
 opt-level = 2
 
 [profile.dev.package.liblisa-x64-observer]
+opt-level = 3
+
+[profile.dev.package.liblisa-ghidra-x64-observer]
 opt-level = 3
