@@ -10,7 +10,7 @@ pub type MemoryEntry = (Addr, Permissions, Vec<u8>);
 /// Memory state of a CPU.
 #[derive(Clone, Default, PartialEq, Eq)]
 pub struct MemoryState {
-    data: Box<[MemoryEntry]>,
+    pub data: Box<[MemoryEntry]>,
 }
 
 struct DisplayBytesAsHex<'a>(&'a [u8]);

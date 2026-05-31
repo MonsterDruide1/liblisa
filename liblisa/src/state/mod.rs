@@ -46,8 +46,8 @@ impl<'a, A: Arch> From<(&'a SystemState<A>, &'a SystemState<A>)> for SystemState
 /// A CPU state consisting of the architecture-specific state part and memory mappings.
 #[derive(Clone, PartialEq, Eq)]
 pub struct SystemState<A: Arch> {
-    cpu: Box<A::CpuState>,
-    memory: MemoryState,
+    pub cpu: Box<A::CpuState>,
+    pub memory: MemoryState,
 
     /// True if the trap flag should be used to observe this system state.
     pub use_trap_flag: bool,

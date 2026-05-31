@@ -8,6 +8,7 @@ use liblisa::state::{Addr, AsSystemState, SystemState};
 use crate::ghidra::GhidraObserver;
 
 pub mod ghidra;
+mod bind;
 
 pub struct GhidraOracle {
     observer: GhidraObserver,

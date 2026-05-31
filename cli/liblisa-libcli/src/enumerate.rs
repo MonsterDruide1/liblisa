@@ -344,7 +344,7 @@ impl<A: Arch> EnumerationCommand<A> {
                         let mut pool = ThreadPool::from_work(scope, create_oracle_source, &cache, &enumeration, &save_artifact);
 
                         // TODO: Automatically determine the right size
-                        pool.resize(threads.unwrap_or(2));
+                        pool.resize(threads.unwrap_or(1));
 
                         if let Some(exit_after) = exit_after {
                             println!("WARNING: Running for only {exit_after} seconds!");

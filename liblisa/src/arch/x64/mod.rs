@@ -343,7 +343,7 @@ impl<T> DerefMut for Align32<T> {
 /// x86-64 XMM state.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Xmm {
-    regs: Align32<[[u8; 32]; 16]>,
+    pub regs: Align32<[[u8; 32]; 16]>,
 }
 
 impl Index<usize> for Xmm {
