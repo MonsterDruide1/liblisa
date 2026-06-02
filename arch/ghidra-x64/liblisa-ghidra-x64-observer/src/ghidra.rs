@@ -6,8 +6,6 @@ use liblisa::arch::x64::{Align32, X64State, Xmm, X87};
 
 use crate::bind;
 
-use libc::malloc_usable_size;
-
 fn bits_to_bytes<const N: usize>(bits: u8) -> u64 {
     assert!(N > 0 && N <= 8);
 

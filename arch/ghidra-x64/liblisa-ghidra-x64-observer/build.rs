@@ -24,7 +24,14 @@ fn main() {
 
     Command::new("make")
         .current_dir(&ghidraemu_dir)
+        .stdout(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::inherit())
         .status()
+        .map(|status| {
+            if !status.success() {
+                panic!("Failed to build ghidraemu");
+            }
+        })
         .expect("Failed to build ghidraemu");
 
     // The bindgen::Builder is the main entry point
