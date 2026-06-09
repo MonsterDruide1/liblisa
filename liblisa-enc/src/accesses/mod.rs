@@ -194,7 +194,8 @@ impl<'a, A: Arch, M: MappableArea> BaseGenerator<'a, A, M> {
         }
 
         match base_result {
-            Err(OracleError::MemoryAccess(addr)) => {
+            Err(OracleError::MemoryAccess(addr)) |
+            Err(OracleError::InstructionFetchMemoryAccess(addr)) => {
                 // If the memory access occurs just past the end of a mapped page, the address is likely not the base address.
                 // The first few bytes on the mapped page would not have caused a page fault.
                 // We also ignore memory errors on already mapped pages, since those are ignored during early synthesis.
@@ -550,6 +551,7 @@ impl<'a, A: Arch, M: MappableArea> BaseGenerator<'a, A, M> {
             *needs_sanity_check -= 1;
             match state_out {
                 Err(OracleError::MemoryAccess(new_addr)) if &new_addr == addr => (),
+                Err(OracleError::InstructionFetchMemoryAccess(new_addr)) if &new_addr == addr => (),
                 _ => {
                     debug!("Sanity check failed: {state_out:X?} vs expected addr {addr:X?} state_in={state_in:X?}");
                     return Err(AccessAnalysisError::NonGpRegAccess);
@@ -710,9 +712,11 @@ impl MemoryAccessAnalysis {
 
                 num_observations += 1;
                 match result {
-                    Err(OracleError::MemoryAccess(new_addr)) if new_addr == expected => match second_result {
+                    Err(OracleError::MemoryAccess(new_addr)) |
+                    Err(OracleError::InstructionFetchMemoryAccess(new_addr)) if new_addr == expected => match second_result {
                         Ok(_)
                         | Err(OracleError::MemoryAccess(_))
+                        | Err(OracleError::InstructionFetchMemoryAccess(_))
                         | Err(OracleError::ComputationError)
                         | Err(OracleError::InvalidInstruction) => {
                             debug!(
@@ -796,10 +800,11 @@ impl MemoryAccessAnalysis {
 
             match result {
                 // Memory access at the end of the page, the memory is bigger
-                Err(OracleError::MemoryAccess(addr)) if addr == expected_access => CheckSizeResult::Increase,
+                Err(OracleError::MemoryAccess(addr)) |
+                Err(OracleError::InstructionFetchMemoryAccess(addr)) if addr == expected_access => CheckSizeResult::Increase,
 
                 // No memory error, we must have reached the max
-                Ok(_) | Err(OracleError::ComputationError) | Err(OracleError::MemoryAccess(_)) => CheckSizeResult::Ok,
+                Ok(_) | Err(OracleError::ComputationError) | Err(OracleError::MemoryAccess(_)) | Err(OracleError::InstructionFetchMemoryAccess(_)) => CheckSizeResult::Ok,
 
                 // May be alignment instead of negative memory, so we can't return Ok/Increase
                 Err(OracleError::GeneralFault) => CheckSizeResult::Failed,
@@ -981,6 +986,7 @@ impl MemoryAccessAnalysis {
                 for ((state_in, addr), state_out) in o.batch_observe_iter(sanity_checks) {
                     match state_out {
                         Err(OracleError::MemoryAccess(new_addr)) if &new_addr == addr => (),
+                        Err(OracleError::InstructionFetchMemoryAccess(new_addr)) if &new_addr == addr => (),
                         _ => {
                             debug!("Sanity check failed: {state_out:X?} vs expected addr {addr:X?} state_in={state_in:X?}");
                             return Err(AccessAnalysisError::NonGpRegAccess);
@@ -1010,7 +1016,7 @@ impl MemoryAccessAnalysis {
                             .chain(once((*addr, Permissions::Read, vec! [ 0 ]))))
                     );
                     (state, *addr)
-                })).any(|((_, addr), state_out)| matches!(state_out, Err(OracleError::MemoryAccess(other_addr)) if other_addr != addr));
+                })).any(|((_, addr), state_out)| matches!(state_out, Err(OracleError::MemoryAccess(other_addr)) | Err(OracleError::InstructionFetchMemoryAccess(other_addr)) if other_addr != addr));
 
                 info!("More memory accesses expected: {more_memory_accesses_expected:?}");
 
@@ -1232,7 +1238,8 @@ impl MemoryAccessAnalysis {
                 // We don't expect memory accesses here, since we should have identified all memory accesses that we can observe with page faults!
                 // randomize_new always produces a state where all pages are mappable
                 match base_result {
-                    Err(OracleError::MemoryAccess(addr)) => {
+                    Err(OracleError::MemoryAccess(addr)) |
+                    Err(OracleError::InstructionFetchMemoryAccess(addr)) => {
                         // Make sure we're not seeing this error because we incorrectly estimated the size of the memory
                         if base
                             .memory()

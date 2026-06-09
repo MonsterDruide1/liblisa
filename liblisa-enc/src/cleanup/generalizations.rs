@@ -131,6 +131,7 @@ pub fn remove_incorrect_generalizations<A: Arch, O: Oracle<A>>(o: &mut O, encodi
                                                 (Err(OracleError::InvalidInstruction), Err(OracleError::InvalidInstruction)) => false,
                                                 (Err(OracleError::MultipleInstructionsExecuted), _) | (_, Err(OracleError::MultipleInstructionsExecuted)) => todo!("Multiple instructions executed"),
                                                 (Ok(_), Err(OracleError::MemoryAccess(_))) | (Err(OracleError::MemoryAccess(_)), Ok(_)) => false,
+                                                (Ok(_), Err(OracleError::InstructionFetchMemoryAccess(_))) | (Err(OracleError::InstructionFetchMemoryAccess(_)), Ok(_)) => false,
                                                 // TODO: Should we compare Err()s as well?
                                                 _ => true,
                                             };
