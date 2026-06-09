@@ -142,4 +142,27 @@ impl GhidraObserver {
             bind::debug_dump(self.instance);
         }
     }
+
+    pub fn debug_dump_pcode(&mut self, instruction: &[u8]) {
+        unsafe {
+            bind::debug_dump_pcode(self.instance, instruction.as_ptr());
+        }
+    }
+
+    pub fn debug_dump_state(&mut self, state: &state::SystemState<X64Arch>) {
+        let pc = CpuState::<X64Arch>::gpreg(state.cpu(), GpReg::Rip);
+        let instruction = state.memory().iter().find_map(|(addr, _, data)| {
+            let offset = pc.checked_sub(addr.as_u64())?;
+            if (offset as usize) < data.len() {
+                Some(&data[offset as usize..])
+            } else {
+                None
+            }
+        }).unwrap_or(&[]);
+        
+        println!("{:#?}", state);
+        unsafe {
+            bind::debug_dump_pcode(self.instance, instruction.as_ptr());
+        }
+    }
 }

@@ -43,6 +43,10 @@ impl Oracle<X64Arch> for GhidraOracle {
         println!("{:#?}", self.observer);
     }
 
+    fn debug_dump_state(&mut self, state: &SystemState<X64Arch>) {
+        self.observer.debug_dump_state(state);
+    }
+
     fn restart(&mut self) {
         // TODO: Do we need this?
     }

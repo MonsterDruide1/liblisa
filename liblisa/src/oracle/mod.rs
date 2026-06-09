@@ -184,4 +184,7 @@ pub trait Oracle<A: Arch> {
 
     /// Kills the oracle, if possible.
     fn kill(self);
+
+    /// Prints debugging information about the current state/instruction.
+    fn debug_dump_state(&mut self, state: &SystemState<A>);
 }

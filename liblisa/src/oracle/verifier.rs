@@ -93,6 +93,15 @@ impl<A: Arch, O1: Oracle<A>, O2: Oracle<A>> Oracle<A> for VerifyOracle<A, O1, O2
         self.1.debug_dump();
     }
 
+    fn debug_dump_state(&mut self, state: &SystemState<A>) {
+        println!("First:");
+        self.0.debug_dump_state(state);
+
+        println!();
+        println!("Second:");
+        self.1.debug_dump_state(state);
+    }
+
     fn restart(&mut self) {
         self.0.restart();
         self.1.restart();

@@ -32,6 +32,10 @@ impl<'o, A: Arch, O: Oracle<A>> Oracle<A> for CarefulOracle<'o, A, O> {
         self.oracle.debug_dump()
     }
 
+    fn debug_dump_state(&mut self, state: &SystemState<A>) {
+        self.oracle.debug_dump_state(state)
+    }
+
     fn observe_carefully(&mut self, before: &SystemState<A>) -> Result<SystemState<A>, OracleError> {
         self.oracle.observe_carefully(before)
     }

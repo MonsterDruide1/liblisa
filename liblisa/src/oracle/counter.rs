@@ -32,6 +32,10 @@ impl<A: Arch, O: Oracle<A>> Oracle<A> for InvocationCountingOracle<A, O> {
         self.oracle.debug_dump()
     }
 
+    fn debug_dump_state(&mut self, state: &SystemState<A>) {
+        self.oracle.debug_dump_state(state)
+    }
+
     fn scan_memory_accesses(&mut self, before: &SystemState<A>) -> Result<Vec<Addr>, OracleError> {
         self.observations += 1;
         self.oracle.scan_memory_accesses(before)

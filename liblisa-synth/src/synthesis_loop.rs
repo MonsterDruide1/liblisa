@@ -76,6 +76,9 @@ impl<A: Arch> Oracle<A> for MissingOracle {
     fn debug_dump(&mut self) {
         unimplemented!()
     }
+    fn debug_dump_state(&mut self, state: &SystemState<A>) {
+        unimplemented!()
+    }
     fn restart(&mut self) {
         unimplemented!()
     }

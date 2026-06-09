@@ -380,6 +380,8 @@ where
 
     fn debug_dump(&mut self) {}
 
+    fn debug_dump_state(&mut self, state: &SystemState<FakeArch>) {}
+
     fn restart(&mut self) {}
 
     fn kill(self) {}

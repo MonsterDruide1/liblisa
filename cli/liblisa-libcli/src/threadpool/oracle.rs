@@ -33,6 +33,10 @@ impl<A: Arch, O: Oracle<A>> Oracle<A> for PooledOracle<O> {
         self.oracle.debug_dump()
     }
 
+    fn debug_dump_state(&mut self, state: &SystemState<A>) {
+        self.oracle.debug_dump_state(state)
+    }
+
     fn restart(&mut self) {
         self.oracle.restart()
     }
