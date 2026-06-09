@@ -1,8 +1,8 @@
-use liblisa::arch::x64::X64Arch;
+use liblisa::arch::CpuState;
 use liblisa::oracle::OracleError;
 use liblisa::state;
 use liblisa::state::Addr;
-use liblisa::arch::x64::{Align32, X64State, Xmm, X87};
+use liblisa::arch::x64::{Align32, GpReg, X64Arch, X64State, X87, Xmm};
 
 use crate::bind;
 
@@ -118,10 +118,16 @@ impl GhidraObserver {
     pub fn observe(&mut self, before: &state::SystemState<X64Arch>) -> Result<state::SystemState<X64Arch>, OracleError> {
         unsafe {
             let ghidra_state = liblisa_to_ghidra(before);
-            let new_state_ptr = bind::observe(ghidra_state, self.instance);
-            let new_state = *new_state_ptr;
+            let observation_result = bind::observe(ghidra_state, self.instance);
+            match observation_result.exception.exception_type {
+                bind::ExceptionType_None => {},
+                bind::ExceptionType_PageFault => return Err(OracleError::MemoryAccess(Addr::new(observation_result.exception.address))),
+                bind::ExceptionType_InstructionPageFault => return Err(OracleError::InstructionFetchMemoryAccess(Addr::new(observation_result.exception.address))),
+                exception => unreachable!("Ghidra emulator threw unexpected exception: {:?}", exception),
+            }
+            let new_state = *observation_result.after;
             let result = ghidra_to_liblisa(&new_state);
-            bind::cleanup_systemstate(new_state_ptr);
+            bind::cleanup_systemstate(observation_result);
             Ok(result)
         }
     }
@@ -129,10 +135,16 @@ impl GhidraObserver {
     pub fn scan_memory_accesses(&mut self, before: &state::SystemState<X64Arch>) -> Result<Vec<Addr>, OracleError> {
         unsafe {
             let ghidra_state = liblisa_to_ghidra(before);
-            let accesses_ptr = bind::scan_memory_accesses(ghidra_state, self.instance);
-            let accesses = *accesses_ptr;
+            let scan_result = bind::scan_memory_accesses(ghidra_state, self.instance);
+            match scan_result.exception.exception_type {
+                bind::ExceptionType_None => {},
+                bind::ExceptionType_PageFault => return Err(OracleError::MemoryAccess(Addr::new(scan_result.exception.address))),
+                bind::ExceptionType_InstructionPageFault => return Err(OracleError::InstructionFetchMemoryAccess(Addr::new(scan_result.exception.address))),
+                exception => unreachable!("Ghidra emulator threw unexpected exception during memory access scan: {:?}", exception),
+            }
+            let accesses = *scan_result.accesses;
             let result = (0..accesses.num_accesses).map(|index| Addr::new(*accesses.accesses.offset(index as isize))).collect();
-            bind::cleanup_memoryaccesses(accesses_ptr);
+            bind::cleanup_memoryaccesses(scan_result);
             Ok(result)
         }
     }
