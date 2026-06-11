@@ -123,6 +123,7 @@ impl GhidraObserver {
                 bind::ExceptionType_None => {},
                 bind::ExceptionType_PageFault => return Err(OracleError::MemoryAccess(Addr::new(observation_result.exception.address))),
                 bind::ExceptionType_InstructionPageFault => return Err(OracleError::InstructionFetchMemoryAccess(Addr::new(observation_result.exception.address))),
+                bind::ExceptionType_InvalidInstruction => return Err(OracleError::InvalidInstruction),
                 exception => unreachable!("Ghidra emulator threw unexpected exception: {:?}", exception),
             }
             let new_state = *observation_result.after;
@@ -140,6 +141,7 @@ impl GhidraObserver {
                 bind::ExceptionType_None => {},
                 bind::ExceptionType_PageFault => return Err(OracleError::MemoryAccess(Addr::new(scan_result.exception.address))),
                 bind::ExceptionType_InstructionPageFault => return Err(OracleError::InstructionFetchMemoryAccess(Addr::new(scan_result.exception.address))),
+                bind::ExceptionType_InvalidInstruction => return Err(OracleError::InvalidInstruction),
                 exception => unreachable!("Ghidra emulator threw unexpected exception during memory access scan: {:?}", exception),
             }
             let accesses = *scan_result.accesses;
