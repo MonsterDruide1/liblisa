@@ -650,6 +650,12 @@ impl Oracle<X64Arch> for VmOracle {
         println!("{:#?}", self.observer);
     }
 
+    fn debug_dump_state(&mut self, state: &SystemState<X64Arch>) {
+        self.observer.debug_dump();
+        println!("{:#?}", self.observer);
+        warn!("Dumping state is not supported by VmOracle");
+    }
+
     fn restart(&mut self) {
         // TODO: Do we need this?
     }
