@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use liblisa::arch::CpuState;
 use liblisa::oracle::OracleError;
 use liblisa::state;
@@ -72,7 +74,21 @@ pub fn liblisa_to_ghidra(state: &state::SystemState<X64Arch>) -> bind::SystemSta
     state
 }
 
-pub fn ghidra_to_liblisa(state: &bind::SystemState) -> state::SystemState<X64Arch> {
+pub fn ghidra_to_liblisa(state: &bind::SystemState, memory_before: &state::MemoryState) -> state::SystemState<X64Arch> {
+    let memory_data: HashMap<u64, Vec<u8>> = unsafe {
+        std::slice::from_raw_parts(state.memory.entries, state.memory.num_entries as usize).iter().map(|entry| {
+            (entry.address, std::slice::from_raw_parts(entry.data, entry.size as usize).to_vec())
+        })
+    }.collect();
+    
+    let memory = memory_before.iter().enumerate().map(|(index, (addr, perms, old_data))| {
+        let offset = (addr.as_u64() & 0b1111_1111_1111) as usize;
+        let page = addr.as_u64() & !0b1111_1111_1111;
+        let page_data = memory_data.get(&page).unwrap_or_else(|| panic!("Ghidra did not return memory for page {:#x}, required for offset {:#x}", page, addr.as_u64()));
+        // NOTE: defaults permissions to `ReadWrite`, as Ghidra's emulator has no permission system
+        (*addr, state::Permissions::ReadWrite, page_data[offset..offset + old_data.len()].to_vec())
+    });
+
     state::SystemState {
         cpu: Box::new(X64State {
             regs: Align32(state.cpu.regs),
@@ -90,12 +106,7 @@ pub fn ghidra_to_liblisa(state: &bind::SystemState) -> state::SystemState<X64Arc
             xmm_daz: state.cpu.xmm_daz,
         }),
         memory: state::MemoryState::new(
-            unsafe {
-                std::slice::from_raw_parts(state.memory.entries, state.memory.num_entries as usize).iter().map(|entry| {
-                    // NOTE: defaults permissions to `ReadWrite`, as Ghidra's emulator has no permission system
-                    (Addr::new(entry.address), state::Permissions::ReadWrite, std::slice::from_raw_parts(entry.data, entry.size as usize).to_vec())
-                })
-            }
+            memory
         ),
         use_trap_flag: state.use_trap_flag,
         contains_valid_addrs: state.contains_valid_addrs,
@@ -127,7 +138,7 @@ impl GhidraObserver {
                 exception => unreachable!("Ghidra emulator threw unexpected exception: {:?}", exception),
             }
             let new_state = *observation_result.after;
-            let result = ghidra_to_liblisa(&new_state);
+            let result = ghidra_to_liblisa(&new_state, before.memory());
             bind::cleanup_systemstate(observation_result);
             Ok(result)
         }
