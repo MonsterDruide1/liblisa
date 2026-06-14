@@ -30,17 +30,21 @@ fn bytes_to_bits<const N: usize>(bytes: u64) -> u8 {
 pub fn liblisa_to_ghidra(state: &state::SystemState<X64Arch>) -> bind::SystemState {
     let mut memory_data = Vec::new();
     let mut memory_entries = Vec::new();
-    
-    // NOTE: ignores permissions, as Ghidra has no permission system
+
     for (_, _, data) in state.memory().iter() {
         memory_data.push(data.clone());
     }
-    for (i, (addr, _, _)) in state.memory().iter().enumerate() {
+    for (i, (addr, perms, _)) in state.memory().iter().enumerate() {
         let data = &memory_data[i];
         memory_entries.push(bind::MemoryEntry {
             address: addr.as_u64(),
             size: data.len() as u64,
             data: data.as_ptr() as *mut u8,
+            permissions: match perms {
+                state::Permissions::Read => bind::Permission_Permission_Read,
+                state::Permissions::ReadWrite => bind::Permission_Permission_Read | bind::Permission_Permission_Write,
+                state::Permissions::Execute => bind::Permission_Permission_Read | bind::Permission_Permission_Execute,
+            },
         });
     }
 
@@ -75,18 +79,23 @@ pub fn liblisa_to_ghidra(state: &state::SystemState<X64Arch>) -> bind::SystemSta
 }
 
 pub fn ghidra_to_liblisa(state: &bind::SystemState, memory_before: &state::MemoryState) -> state::SystemState<X64Arch> {
-    let memory_data: HashMap<u64, Vec<u8>> = unsafe {
+    let memory_data: HashMap<u64, (Vec<u8>, state::Permissions)> = unsafe {
         std::slice::from_raw_parts(state.memory.entries, state.memory.num_entries as usize).iter().map(|entry| {
-            (entry.address, std::slice::from_raw_parts(entry.data, entry.size as usize).to_vec())
+            let perms = match entry.permissions {
+                bind::Permission_Permission_Read => state::Permissions::Read,
+                bind::Permission_Permission_Read | bind::Permission_Permission_Write => state::Permissions::ReadWrite,
+                bind::Permission_Permission_Read | bind::Permission_Permission_Execute => state::Permissions::Execute,
+                _ => unreachable!("Ghidra returned memory entry with invalid permissions: {:#x}", entry.permissions),
+            };
+            (entry.address, (std::slice::from_raw_parts(entry.data, entry.size as usize).to_vec(), perms))
         })
     }.collect();
     
     let memory = memory_before.iter().enumerate().map(|(index, (addr, perms, old_data))| {
         let offset = (addr.as_u64() & 0b1111_1111_1111) as usize;
         let page = addr.as_u64() & !0b1111_1111_1111;
-        let page_data = memory_data.get(&page).unwrap_or_else(|| panic!("Ghidra did not return memory for page {:#x}, required for offset {:#x}", page, addr.as_u64()));
-        // NOTE: defaults permissions to `ReadWrite`, as Ghidra's emulator has no permission system
-        (*addr, state::Permissions::ReadWrite, page_data[offset..offset + old_data.len()].to_vec())
+        let (page_data, perms) = memory_data.get(&page).unwrap_or_else(|| panic!("Ghidra did not return memory for page {:#x}, required for offset {:#x}", page, addr.as_u64()));
+        (*addr, *perms, page_data[offset..offset + old_data.len()].to_vec())
     });
 
     state::SystemState {
