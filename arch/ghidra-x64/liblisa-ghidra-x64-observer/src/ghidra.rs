@@ -81,12 +81,19 @@ pub fn liblisa_to_ghidra(state: &state::SystemState<X64Arch>) -> bind::SystemSta
 pub fn ghidra_to_liblisa(state: &bind::SystemState, memory_before: &state::MemoryState) -> state::SystemState<X64Arch> {
     let memory_data: HashMap<u64, (Vec<u8>, state::Permissions)> = unsafe {
         std::slice::from_raw_parts(state.memory.entries, state.memory.num_entries as usize).iter().map(|entry| {
-            let perms = match entry.permissions {
-                bind::Permission_Permission_Read => state::Permissions::Read,
-                bind::Permission_Permission_Read | bind::Permission_Permission_Write => state::Permissions::ReadWrite,
-                bind::Permission_Permission_Read | bind::Permission_Permission_Execute => state::Permissions::Execute,
-                _ => unreachable!("Ghidra returned memory entry with invalid permissions: {:#x}", entry.permissions),
-            };
+            let is_read = entry.permissions & bind::Permission_Permission_Read != 0;
+            let is_write = entry.permissions & bind::Permission_Permission_Write != 0;
+            let is_execute = entry.permissions & bind::Permission_Permission_Execute != 0;
+            let perms =
+                if is_read && !is_write && !is_execute {
+                    state::Permissions::Read
+                } else if is_read && is_write && !is_execute {
+                    state::Permissions::ReadWrite
+                } else if is_read && !is_write && is_execute {
+                    state::Permissions::Execute
+                } else {
+                    unreachable!("Ghidra returned memory entry with invalid permissions: {:#x}", entry.permissions);
+                };
             (entry.address, (std::slice::from_raw_parts(entry.data, entry.size as usize).to_vec(), perms))
         })
     }.collect();
