@@ -19,6 +19,7 @@ include = [
 [dependencies]
 itertools = "0.12.0"
 liblisa = { version = "0.1.0", path = "../../../liblisa" }
+log = "0.4"
 
 [build-dependencies]
 bindgen = "0.72.1"

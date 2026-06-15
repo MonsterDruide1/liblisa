@@ -948,6 +948,7 @@ dependencies = [
  "bindgen 0.72.1",
  "itertools 0.12.1",
  "liblisa",
+ "log",
 ]
 
 [[package]]

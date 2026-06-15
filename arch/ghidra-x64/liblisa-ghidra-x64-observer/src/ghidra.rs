@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use log::warn;
 
 use liblisa::arch::CpuState;
 use liblisa::oracle::OracleError;
@@ -99,10 +100,11 @@ pub fn ghidra_to_liblisa(state: &bind::SystemState, memory_before: &state::Memor
     }.collect();
     
     let memory = memory_before.iter().enumerate().map(|(index, (addr, perms, old_data))| {
-        let offset = (addr.as_u64() & 0b1111_1111_1111) as usize;
-        let page = addr.as_u64() & !0b1111_1111_1111;
-        let (page_data, perms) = memory_data.get(&page).unwrap_or_else(|| panic!("Ghidra did not return memory for page {:#x}, required for offset {:#x}", page, addr.as_u64()));
-        (*addr, *perms, page_data[offset..offset + old_data.len()].to_vec())
+        let (new_data, new_perms) = memory_data.get(&addr.as_u64()).unwrap_or_else(|| panic!("Ghidra did not return memory for address {:#x}", addr.as_u64() & !0b1111_1111_1111));
+        if *perms != *new_perms {
+            warn!("Ghidra returned different permissions for page {:#x} than provided by liblisa: {:#?} vs {:#?}", addr.as_u64() & !0b1111_1111_1111, perms, new_perms);
+        }
+        (*addr, *perms, new_data.clone())
     });
 
     state::SystemState {
