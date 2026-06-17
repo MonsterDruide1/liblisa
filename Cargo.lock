@@ -908,6 +908,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "liblisa-bench"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "env_logger 0.10.2",
+ "liblisa",
+ "liblisa-ghidra-x64-observer",
+ "liblisa-libcli",
+ "liblisa-x64-observer",
+ "log",
+ "test-log",
+]
+
+[[package]]
 name = "liblisa-enc"
 version = "0.1.0"
 dependencies = [
