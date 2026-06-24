@@ -48,6 +48,7 @@ impl<A: Arch, O1: Oracle<A>, O2: Oracle<A>> Oracle<A> for VerifyOracle<A, O1, O2
                 (Ok(a), Ok(b)) if a == b => true,
                 (Err(a), Err(b)) => match (a, b) {
                     (MemoryAccess(a), MemoryAccess(b)) if a == b => true,
+                    (InstructionFetchMemoryAccess(a), InstructionFetchMemoryAccess(b)) if a == b => true,
                     (InvalidInstruction, InvalidInstruction) => true,
                     (GeneralFault, GeneralFault) => true,
                     (ComputationError, ComputationError) => true,
