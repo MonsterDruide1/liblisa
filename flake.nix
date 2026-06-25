@@ -1,6 +1,6 @@
 {
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
     flake-parts.url = "github:hercules-ci/flake-parts";
     systems.url = "github:nix-systems/default";
     rust-overlay.url = "github:oxalica/rust-overlay";
@@ -25,6 +25,7 @@
           pkgs.clang
           pkgs.libclang
           pkgs.z3.dev
+          pkgs.libz
         ];
         LD_LIBRARY_PATH = "${pkgs.lib.makeLibraryPath buildInputs}";
       };
