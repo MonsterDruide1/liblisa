@@ -5,7 +5,7 @@ use liblisa::arch::CpuState;
 use liblisa::oracle::OracleError;
 use liblisa::state;
 use liblisa::state::Addr;
-use liblisa::arch::x64::{Align32, GpReg, X64Arch, X64State, X87, Xmm};
+use liblisa::arch::x64::{Align32, GpReg, X64Arch, X64Flag, X64State, X87, Xmm};
 
 use crate::bind;
 
@@ -49,9 +49,19 @@ pub fn liblisa_to_ghidra(state: &state::SystemState<X64Arch>) -> bind::SystemSta
         });
     }
 
+    let mut regs = state.cpu().regs.0;
+    const TRAP_FLAG: u64 = 1 << 8;
+    regs[GpReg::RFlags as usize] = ((CpuState::<X64Arch>::flag(state.cpu(), X64Flag::Cf) as u64)
+            | ((CpuState::<X64Arch>::flag(state.cpu(), X64Flag::Pf) as u64) << 2)
+            | ((CpuState::<X64Arch>::flag(state.cpu(), X64Flag::Af) as u64) << 4)
+            | ((CpuState::<X64Arch>::flag(state.cpu(), X64Flag::Zf) as u64) << 6)
+            | ((CpuState::<X64Arch>::flag(state.cpu(), X64Flag::Sf) as u64) << 7)
+            | ((CpuState::<X64Arch>::flag(state.cpu(), X64Flag::Of) as u64) << 11))
+            | if state.use_trap_flag { TRAP_FLAG } else { 0 };
+
     let state = bind::SystemState {
         cpu: bind::X64State {
-            regs: state.cpu().regs.0,
+            regs: regs,
             xmm: bind::Xmm {
                 regs: state.cpu().xmm.regs.0,
             },
@@ -107,7 +117,7 @@ pub fn ghidra_to_liblisa(state: &bind::SystemState, memory_before: &state::Memor
         (*addr, *perms, new_data.clone())
     });
 
-    state::SystemState {
+    let mut result = state::SystemState {
         cpu: Box::new(X64State {
             regs: Align32(state.cpu.regs),
             xmm: Xmm {
@@ -128,7 +138,19 @@ pub fn ghidra_to_liblisa(state: &bind::SystemState, memory_before: &state::Memor
         ),
         use_trap_flag: state.use_trap_flag,
         contains_valid_addrs: state.contains_valid_addrs,
-    }
+    };
+
+    let rflags = state.cpu.regs[GpReg::RFlags as usize];
+    let cpu: &mut X64State = result.cpu_mut();
+    cpu.regs.0[GpReg::RFlags as usize] = 0;
+    CpuState::<X64Arch>::set_flag(cpu, X64Flag::Cf, rflags & 1 == 1);
+    CpuState::<X64Arch>::set_flag(cpu, X64Flag::Pf, (rflags >> 2) & 1 == 1);
+    CpuState::<X64Arch>::set_flag(cpu, X64Flag::Af, (rflags >> 4) & 1 == 1);
+    CpuState::<X64Arch>::set_flag(cpu, X64Flag::Zf, (rflags >> 6) & 1 == 1);
+    CpuState::<X64Arch>::set_flag(cpu, X64Flag::Sf, (rflags >> 7) & 1 == 1);
+    CpuState::<X64Arch>::set_flag(cpu, X64Flag::Of, (rflags >> 11) & 1 == 1);
+
+    result
 }
 
 #[derive(Debug)]
