@@ -154,6 +154,7 @@ impl GhidraObserver {
                 bind::ExceptionType_InstructionPageFault => return Err(OracleError::InstructionFetchMemoryAccess(Addr::new(observation_result.exception.address))),
                 bind::ExceptionType_InvalidInstruction => return Err(OracleError::InvalidInstruction),
                 bind::ExceptionType_ComputationError => return Err(OracleError::ComputationError),
+                bind::ExceptionType_GeneralProtectionFault => return Err(OracleError::GeneralFault),
                 exception => unreachable!("Ghidra emulator threw unexpected exception: {:?}", exception),
             }
             let new_state = *observation_result.after;
