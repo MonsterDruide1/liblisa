@@ -117,8 +117,8 @@ pub fn ghidra_to_liblisa(state: &bind::SystemState, memory_before: &state::Memor
         (*addr, *perms, new_data.clone())
     });
 
-    let mut result = state::SystemState {
-        cpu: Box::new(X64State {
+    let mut result = state::SystemState::new(
+        X64State {
             regs: Align32(state.cpu.regs),
             xmm: Xmm {
                 regs: Align32(state.cpu.xmm.regs),
@@ -132,13 +132,11 @@ pub fn ghidra_to_liblisa(state: &bind::SystemState, memory_before: &state::Memor
             },
             xmm_exception_flags: bits_to_bytes::<6>(state.cpu.xmm_exception_flags),
             xmm_daz: state.cpu.xmm_daz,
-        }),
-        memory: state::MemoryState::new(
+        },
+        state::MemoryState::new(
             memory
         ),
-        use_trap_flag: state.use_trap_flag,
-        contains_valid_addrs: state.contains_valid_addrs,
-    };
+    );
 
     let rflags = state.cpu.regs[GpReg::RFlags as usize];
     let cpu: &mut X64State = result.cpu_mut();
