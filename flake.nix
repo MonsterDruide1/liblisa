@@ -25,7 +25,7 @@
           pkgs.clang
           pkgs.libclang
           pkgs.z3.dev
-          pkgs.libz
+          pkgs.zlib
         ];
         LD_LIBRARY_PATH = "${pkgs.lib.makeLibraryPath buildInputs}";
       };
