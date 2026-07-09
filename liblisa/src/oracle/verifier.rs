@@ -54,7 +54,8 @@ impl<A: Arch, O1: Oracle<A>, O2: Oracle<A>> Oracle<A> for VerifyOracle<A, O1, O2
                     (ComputationError, ComputationError) => true,
                     _ => false,
                 },
-                _ => {
+                (Ok(_), Ok(_)) => {
+                    println!("Observations don't match: {before:X?} results in {r1:X?} vs {r2:X?}");
                     self.debug_dump();
 
                     for _ in 0..1000 {
@@ -70,6 +71,7 @@ impl<A: Arch, O1: Oracle<A>, O2: Oracle<A>> Oracle<A> for VerifyOracle<A, O1, O2
 
                     false
                 },
+                _ => false,
             },
             "Observations don't match: {before:X?} results in {r1:X?} vs {r2:X?}"
         );
