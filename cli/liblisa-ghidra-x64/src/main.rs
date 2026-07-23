@@ -1,7 +1,7 @@
 use clap::Parser;
 use liblisa::{arch::x64::{PrefixScope, X64Arch}, oracle::OracleSource};
 use liblisa_libcli::CliCommand;
-use liblisa_ghidra_x64_observer::GhidraOracle;
+use liblisa_ghidra_x64_observer::{GhidraOracleSource, GhidraOracle};
 use log::trace;
 use liblisa_x64_observer::{VmOracle, VmOracleSource};
 
@@ -62,5 +62,5 @@ pub fn main() {
         println!("Observation result: {ok:?}");
     }*/
 
-    args.run(|_| GhidraVerifierOracleSource::new(), PrefixScope);
+    args.run(|_| GhidraOracleSource::new(), PrefixScope);
 }

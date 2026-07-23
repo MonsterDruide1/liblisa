@@ -43,6 +43,29 @@ fn is_mismatch_ok(before: &SystemState<X64Arch>, r1: &SystemState<X64Arch>, r2: 
         CpuState::<X64Arch>::set_flag(r1c.cpu_mut(), X64Flag::Af, CpuState::<X64Arch>::flag(r2.cpu(), X64Flag::Af));
         return r1c == *r2;
     }
+
+    false
+}
+
+fn is_ignore_vm(before: &SystemState<X64Arch>) -> bool {
+    let pc = CpuState::<X64Arch>::gpreg(before.cpu(), GpReg::Rip);
+    let instruction = before.memory().iter().find_map(|(addr, _, data)| {
+        let offset = pc.checked_sub(addr.as_u64())?;
+        if (offset as usize) < data.len() {
+            Some(&data[offset as usize..])
+        } else {
+            None
+        }
+    }).unwrap_or(&[]);
+
+    // IN/OUT instructions relating to IO-Ports
+    if instruction.len() == 1 && [0x6c, 0x6d, 0x6e, 0x6f, 0xe4, 0xe5, 0xe6, 0xe7, 0xec, 0xed, 0xee, 0xef].contains(&instruction[0]) {
+        return true;
+    }
+    // CLI: no check against IOPL in Ghidra
+    if instruction.len() == 1 && instruction[0] == 0xfa {
+        return true;
+    }
     false
 }
 
@@ -61,6 +84,9 @@ impl<O1: Oracle<X64Arch>, O2: Oracle<X64Arch>> Oracle<X64Arch> for GhidraVerifyO
     }
 
     fn observe(&mut self, before: &SystemState<X64Arch>) -> Result<SystemState<X64Arch>, OracleError> {
+        if is_ignore_vm(before) {
+            return self.0.observe(before);
+        }
         use OracleError::*;
         let r1 = self.0.observe(before);
         let mut r2 = self.1.observe(before);
