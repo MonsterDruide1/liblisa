@@ -27,8 +27,14 @@ fn bytes_to_bits<const N: usize>(bytes: u64) -> u8 {
         .unwrap()
 }
 
+struct SystemStateWithMemory {
+    state: bind::SystemState,
+    memory_data: Vec<Vec<u8>>,
+    memory_entries: Vec<bind::MemoryEntry>,
+}
+
 // also returns memory data (Vec<Vec<u8>>) and memory entries (Vec<bind::MemoryEntry>) to keep them alive while the pointers in `bind::SystemState` are still used
-pub fn liblisa_to_ghidra(state: &state::SystemState<X64Arch>) -> bind::SystemState {
+pub fn liblisa_to_ghidra<'a>(state: &state::SystemState<X64Arch>) -> SystemStateWithMemory {
     let mut memory_data = Vec::new();
     let mut memory_entries = Vec::new();
 
@@ -82,11 +88,8 @@ pub fn liblisa_to_ghidra(state: &state::SystemState<X64Arch>) -> bind::SystemSta
         use_trap_flag: state.use_trap_flag,
         contains_valid_addrs: state.contains_valid_addrs,
     };
-    
-    std::mem::forget(memory_data);
-    std::mem::forget(memory_entries);
 
-    state
+    SystemStateWithMemory { state, memory_data, memory_entries }
 }
 
 pub fn ghidra_to_liblisa(state: &bind::SystemState, memory_before: &state::MemoryState) -> state::SystemState<X64Arch> {
@@ -167,7 +170,7 @@ impl GhidraObserver {
     pub fn observe(&mut self, before: &state::SystemState<X64Arch>) -> Result<state::SystemState<X64Arch>, OracleError> {
         unsafe {
             let ghidra_state = liblisa_to_ghidra(before);
-            let observation_result = bind::observe(ghidra_state, self.instance);
+            let observation_result = bind::observe(ghidra_state.state, self.instance);
             match observation_result.exception.exception_type {
                 bind::ExceptionType_None => {},
                 bind::ExceptionType_PageFault => return Err(OracleError::MemoryAccess(Addr::new(observation_result.exception.address))),
@@ -187,7 +190,7 @@ impl GhidraObserver {
     pub fn scan_memory_accesses(&mut self, before: &state::SystemState<X64Arch>) -> Result<Vec<Addr>, OracleError> {
         unsafe {
             let ghidra_state = liblisa_to_ghidra(before);
-            let scan_result = bind::scan_memory_accesses(ghidra_state, self.instance);
+            let scan_result = bind::scan_memory_accesses(ghidra_state.state, self.instance);
             match scan_result.exception.exception_type {
                 bind::ExceptionType_None => {},
                 bind::ExceptionType_PageFault => return Err(OracleError::MemoryAccess(Addr::new(scan_result.exception.address))),
