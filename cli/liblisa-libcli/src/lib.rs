@@ -11,6 +11,7 @@ use liblisa::instr::Instruction;
 use liblisa::oracle::{Oracle, OracleSource};
 use liblisa::state::{Addr, MemoryState, Permissions, SystemState};
 use liblisa::value::MutValue;
+use log::info;
 use nix::sched::CpuSet;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -190,7 +191,7 @@ impl<A: Arch, T: SimpleCommand<A> + Args + FromArgMatches> CommandExtension<A, T
         let cpu = CpuCaches::from_path("/sys/devices/system/cpu/cpu0/cache").unwrap();
         // Restrict the current thread to only run on cores that share L3 cache.
         let cache = cpu.caches().find(|c| c.level() == 3).unwrap();
-        println!("Restricting affinity to CPUs that share {cache:#?}");
+        info!("Restricting affinity to CPUs that share {cache:#?}");
         cache.restrict_current_thread_affinity_to_shared_caches().unwrap();
 
         create_oracle_source(cache.shared_with()).start().remove(0)
