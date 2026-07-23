@@ -2,7 +2,7 @@ use std::iter::{once};
 
 use liblisa::arch::x64::{X64Arch};
 use liblisa::arch::fake::AnyArea;
-use liblisa::oracle::{FallbackBatchObserveIter, Observation, Oracle, OracleError, OracleSource};
+use liblisa::oracle::{MappableArea, FallbackBatchObserveIter, Observation, Oracle, OracleError, OracleSource};
 use liblisa::state::{Addr, AsSystemState, SystemState};
 
 use crate::ghidra::GhidraObserver;
@@ -18,12 +18,27 @@ impl GhidraOracle {
         Self { observer: GhidraObserver::new() }
     }
 }
+#[derive(Clone)]
+pub struct GhidraMappableArea {}
+
+impl std::fmt::Debug for GhidraMappableArea {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<?? GhidraMappableArea ??>")
+    }
+}
+impl MappableArea for GhidraMappableArea {
+    fn can_map(&self, addr: Addr) -> bool {
+        // Ghidra can map more, but it's undefined as per x86 spec (=> GP, which liblisa doesn't handle properly)
+        let addr = addr.as_u64();
+        (addr >> 48) == 0xffff * ((addr >> 47) & 1)
+    }
+}
 impl Oracle<X64Arch> for GhidraOracle {
-    type MappableArea = AnyArea;
+    type MappableArea = GhidraMappableArea;
     const UNRELIABLE_INSTRUCTION_FETCH_ERRORS: bool = false;
 
     fn mappable_area(&self) -> Self::MappableArea {
-        AnyArea {}
+        GhidraMappableArea {}
     }
 
     fn page_size(&mut self) -> u64 {
