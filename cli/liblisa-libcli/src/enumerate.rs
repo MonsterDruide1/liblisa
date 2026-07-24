@@ -378,7 +378,10 @@ impl<A: Arch> EnumerationCommand<A> {
                                         let (enumeration, runtime_data) = &mut *enumeration.lock().unwrap();
                                         let mut new_instrs = Vec::new();
                                         for work_item in enumeration.work.iter() {
-                                            let Some(from) = &work_item.next else { continue; };
+                                            if work_item.done {
+                                                continue;
+                                            }
+                                            let from = &work_item.counter.current();
                                             let from_data = from.bytes();
                                             let Some(to) = work_item.to() else { continue; };
                                             let to_data = to.bytes();
