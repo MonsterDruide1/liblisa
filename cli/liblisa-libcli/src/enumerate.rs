@@ -374,7 +374,55 @@ impl<A: Arch> EnumerationCommand<A> {
                                         },
                                         Err(e) => println!("{e}"),
                                     },
-                                    _ => println!("Commands available: stop | threads [n] | split [instr]"),
+                                    ["splitall"] => {
+                                        let (enumeration, runtime_data) = &mut *enumeration.lock().unwrap();
+                                        let mut new_instrs = Vec::new();
+                                        for work_item in enumeration.work.iter() {
+                                            let Some(from) = &work_item.next else { continue; };
+                                            let from_data = from.bytes();
+                                            let Some(to) = work_item.to() else { continue; };
+                                            let to_data = to.bytes();
+
+                                            fn midpoint(a: &[u8], b: &[u8]) -> [u8; 15] {
+                                                let mut sum = [0u8; 16]; // extra byte for overflow
+
+                                                // Add from least-significant byte to most-significant.
+                                                let mut carry = 0u16;
+                                                for i in (0..15).rev() {
+                                                    let s = a[i] as u16 + b[i] as u16 + carry;
+                                                    sum[i + 1] = s as u8;
+                                                    carry = s >> 8;
+                                                }
+                                                sum[0] = carry as u8;
+
+                                                // Divide the 121-bit number by 2.
+                                                let mut out = [0u8; 15];
+                                                let mut rem = 0u8;
+
+                                                for i in 0..16 {
+                                                    let byte = sum[i];
+                                                    let shifted = (rem << 7) | (byte >> 1);
+                                                    rem = byte & 1;
+                                                    if i > 0 {
+                                                        out[i - 1] = shifted;
+                                                    }
+                                                }
+
+                                                out
+                                            }
+
+                                            let new_data = midpoint(from_data, to_data);
+                                            new_instrs.push(Instruction::new(&new_data));
+                                        }
+
+                                        for instr in new_instrs {
+                                            match enumeration.split_on_instr(&mut *runtime_data, instr) {
+                                                Ok(_) => println!("Work item split on {instr:X}"),
+                                                Err(e) => println!("{e}"),
+                                            }
+                                        }
+                                    },
+                                    _ => println!("Commands available: stop | threads [n] | split [instr] | splitall"),
                                 }
                             }
                         }
