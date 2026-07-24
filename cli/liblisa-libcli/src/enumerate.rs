@@ -389,7 +389,9 @@ impl<A: Arch> EnumerationCommand<A> {
                                                 // Add from least-significant byte to most-significant.
                                                 let mut carry = 0u16;
                                                 for i in (0..15).rev() {
-                                                    let s = a[i] as u16 + b[i] as u16 + carry;
+                                                    let a_ = if i < a.len() { a[i] } else { 0 };
+                                                    let b_ = if i < b.len() { b[i] } else { 0 };
+                                                    let s = a_ as u16 + b_ as u16 + carry;
                                                     sum[i + 1] = s as u8;
                                                     carry = s >> 8;
                                                 }
