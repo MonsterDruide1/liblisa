@@ -44,7 +44,7 @@ pub fn random_instr_bytes<R: Rng>(rng: &mut R, start: Instruction, end: Option<I
     let last_max_avoid_index = end
         .map(|end| end.byte_len() - 1 - end.bytes().iter().rev().take_while(|&&b| b == 0).count())
         .unwrap_or(16);
-    for (index, b) in result.iter_mut().enumerate().skip(num_at_end) {
+    for (index, b) in result.iter_mut().enumerate().skip(num_at_end.min(last_max_avoid_index)) {
         let min = start.bytes().get(index).copied().unwrap_or(0);
         let max = end.and_then(|end| end.bytes().get(index).copied()).unwrap_or(0xFF);
         let max_inclusive = end.is_none() || index != last_max_avoid_index;
