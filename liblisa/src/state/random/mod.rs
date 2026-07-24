@@ -439,8 +439,6 @@ impl<'a, A: Arch, M: MappableArea> StateGen<'a, A, M> {
             }
         }
 
-        debug!("Adapted state: {:X?}", s);
-
         trace!("====== Successfully completed adapt() ======");
         if len == s.memory().len() {
             s.contains_valid_addrs = true;
@@ -495,7 +493,7 @@ impl<'a, A: Arch, M: MappableArea> StateGen<'a, A, M> {
                 {
                     // We have found acceptable values for this memory access!
 
-                    debug!("OK: {:X?} (index={}) @ address {:X}", access, access_index, addr);
+                    trace!("OK: {:X?} (index={}) @ address {:X}", access, access_index, addr);
 
                     break;
                 } else if state
@@ -569,7 +567,7 @@ impl<'a, A: Arch, M: MappableArea> StateGen<'a, A, M> {
                                 new_addr,
                                 perms,
                             ) {
-                                debug!("Found good addr: {:X?} with state: {:?}", new_addr, state);
+                                trace!("Found good addr: {:X?} with state: {:?}", new_addr, state);
                                 let page_offset = new_addr - new_addr.page::<A>().start_addr();
                                 let delta = match c {
                                     Constraint::Impossible => return Ok(FillResult::Unsatisfiable(access_index)),
@@ -579,7 +577,7 @@ impl<'a, A: Arch, M: MappableArea> StateGen<'a, A, M> {
                                         max_offset,
                                     } => {
                                         if page_offset >= *min_offset && page_offset <= *max_offset {
-                                            debug!("Constraint OK");
+                                            trace!("Constraint OK");
                                             break
                                         } else {
                                             let fixed_offset = if min_offset == max_offset {
