@@ -22,6 +22,12 @@ pub fn random_instr_bytes<R: Rng>(rng: &mut R, start: Instruction, end: Option<I
             }
         })
         .unwrap_or(0);
+    // The last index where we can avoid generating an instruction equal to `end`.
+    let last_max_avoid_index = end
+        .map(|end| end.byte_len() - 1 - end.bytes().iter().rev().take_while(|&&b| b == 0).count())
+        .unwrap_or(16);
+    let num_end = num_at_end.min(last_max_avoid_index);
+
     let mut is_min = true;
     let mut is_max = true;
     let mut result = [0; 16];
@@ -30,7 +36,7 @@ pub fn random_instr_bytes<R: Rng>(rng: &mut R, start: Instruction, end: Option<I
         .iter_mut()
         .zip(end.as_ref().map(|end| end.bytes()).unwrap_or(&[]).iter().copied())
         .enumerate()
-        .take(num_at_end)
+        .take(num_end)
     {
         let min = start.bytes().get(index).copied().unwrap_or(0);
         *b = max;
@@ -40,11 +46,7 @@ pub fn random_instr_bytes<R: Rng>(rng: &mut R, start: Instruction, end: Option<I
         is_min &= min == max;
     }
 
-    // The last index where we can avoid generating an instruction equal to `end`.
-    let last_max_avoid_index = end
-        .map(|end| end.byte_len() - 1 - end.bytes().iter().rev().take_while(|&&b| b == 0).count())
-        .unwrap_or(16);
-    for (index, b) in result.iter_mut().enumerate().skip(num_at_end.min(last_max_avoid_index)) {
+    for (index, b) in result.iter_mut().enumerate().skip(num_end) {
         let min = start.bytes().get(index).copied().unwrap_or(0);
         let max = end.and_then(|end| end.bytes().get(index).copied()).unwrap_or(0xFF);
         let max_inclusive = end.is_none() || index != last_max_avoid_index;
