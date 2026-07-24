@@ -87,9 +87,25 @@ pub fn random_instr_bytes<R: Rng>(rng: &mut R, start: Instruction, end: Option<I
         // trace!("I[{index}] = 0x{b:X}");
     }
 
+    // check that result is in the range [start, end) if end is provided
     debug_assert!(
-        end.map(|end| &result[..end.byte_len()] != end.bytes()).unwrap_or(true),
-        "result should be less than end: {end:X?} ; input: {start:X} ; result: {end:X?}"
+        result.iter().zip(start.bytes().iter().copied().chain(std::iter::repeat(0)))
+            .all(|(&r, s)| r >= s),
+        "result should be greater than or equal to start: {start:X} ; result: {result:?}"
+    );
+    debug_assert!(
+        (|| {
+            let Some(end) = end else { return true; };
+            for (&r, e) in result.iter().zip(end.bytes().iter().copied().chain(std::iter::repeat(0))) {
+                if r > e {
+                    return false;
+                } else if r < e {
+                    return true;
+                }
+            }
+            false
+        })(),
+        "result should be less than end: {end:X?} ; start: {start:X} ; result: {result:?}"
     );
 
     result
