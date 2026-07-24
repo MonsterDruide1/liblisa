@@ -119,7 +119,7 @@ impl<A: Arch, C: EncodingAnalysisCache<A> + Send + Sync, S: Scope> Work<A, C> fo
                 .filter(|(_, (w, s))| !w.done && s.can_run(w.next_instr_is_out_of_sequence()))
                 .min_by_key(|(_, (w, _))| w.virtual_runtime_ms)
                 .and_then(|(index, (work, status))| {
-                    println!("Checking work for worker_index={index}");
+                    info!("Checking work for worker_index={index}");
 
                     status.pending_or_done = true;
                     if let Some(counter) = work.next_instruction() {
@@ -170,10 +170,10 @@ impl<A: Arch, C: EncodingAnalysisCache<A> + Send + Sync, S: Scope> Work<A, C> fo
         let ms_taken = request.at.elapsed().as_millis();
         self.work[request.worker_index].runtime_ms += ms_taken;
 
-        println!("Received analysis from worker_index={}:", request.worker_index);
+        info!("Received analysis from worker_index={}:", request.worker_index);
 
         let divide_over = data.status[request.worker_index].unstall.len() + 1;
-        println!("Dividing {}s runtime over {} work items", ms_taken / 1000, divide_over);
+        info!("Dividing {}s runtime over {} work items", ms_taken / 1000, divide_over);
         for index in data.status[request.worker_index]
             .unstall
             .iter()
@@ -623,8 +623,8 @@ impl EnumWorkItem {
         };
 
         match &result {
-            AnalysisResult::Ok(encoding) => println!("Completing {instruction:X} with {encoding}"),
-            result => println!("Completing {instruction:X} with {result:X?}"),
+            AnalysisResult::Ok(encoding) => info!("Completing {instruction:X} with {encoding}"),
+            result => info!("Completing {instruction:X} with {result:X?}"),
         }
 
         match result {

@@ -217,7 +217,7 @@ impl<'borrow, 'scope, S: OracleSource> ThreadPool<'borrow, 'scope, (), S> {
                 work.next(data)
             };
 
-            println!("Thread {thread_id}: {next_item:?}");
+            info!("Thread {thread_id}: {next_item:?}");
 
             match next_item {
                 Some(request) => {

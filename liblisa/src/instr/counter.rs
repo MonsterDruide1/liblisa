@@ -2,6 +2,7 @@
 
 use std::fmt::Debug;
 
+use log::info;
 use serde::{Deserialize, Serialize};
 
 use crate::instr::set::FilterList;
@@ -159,7 +160,7 @@ impl InstructionCounter {
 
                 tree.filter(matching_filter);
 
-                println!(
+                info!(
                     "Filtering: {:?} (in {:?} -- tree_size={})",
                     matching_filter,
                     self.current(),
