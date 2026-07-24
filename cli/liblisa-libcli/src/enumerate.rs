@@ -332,10 +332,10 @@ impl<A: Arch> EnumerationCommand<A> {
                             std::thread::sleep(Duration::from_secs(5));
 
                             if last_save.elapsed() >= Duration::from_secs(60) {
-                                println!("Saving state...");
+                                info!("Saving state...");
                                 self.save_state(&enumeration.lock().unwrap().0);
                                 last_save = Instant::now();
-                                println!("Save complete");
+                                info!("Save complete");
                             }
                         }
                     });

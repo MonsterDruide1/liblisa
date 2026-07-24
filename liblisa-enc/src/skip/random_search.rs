@@ -89,7 +89,7 @@ pub fn random_instr_bytes<R: Rng>(rng: &mut R, start: Instruction, end: Option<I
 
     debug_assert!(
         end.map(|end| &result[..end.byte_len()] != end.bytes()).unwrap_or(true),
-        "result should be less than end: {end:X?}"
+        "result should be less than end: {end:X?} ; input: {start:X} ; result: {end:X?}"
     );
 
     result

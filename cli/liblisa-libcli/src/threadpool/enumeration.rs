@@ -198,7 +198,7 @@ impl<A: Arch, C: EncodingAnalysisCache<A> + Send + Sync, S: Scope> Work<A, C> fo
                 if let Some(num) = item.num.checked_sub(1)
                     && !done
                 {
-                    println!("Work item #{} stalled for {num} more cycles", item.worker_index);
+                    info!("Work item #{} stalled for {num} more cycles", item.worker_index);
                     item.num = num;
                     true
                 } else {
@@ -215,7 +215,7 @@ impl<A: Arch, C: EncodingAnalysisCache<A> + Send + Sync, S: Scope> Work<A, C> fo
                 let stalled_by = WorkItemStatus::compute_stalled(item, &data.status);
                 data.status[item].stalled = stalled_by.is_some();
                 self.work[item].stalled_by = stalled_by;
-                println!(
+                info!(
                     "Updating stalled status to stalled={} for worker_index={item} ({:?}), because worker_index={} completed another item",
                     data.status[item].stalled,
                     self.work[item].counter.current(),
@@ -231,7 +231,7 @@ impl<A: Arch, C: EncodingAnalysisCache<A> + Send + Sync, S: Scope> Work<A, C> fo
                 if work.apply_filters(&new_filters) && index != request.worker_index {
                     work.apply_filters(&self.filters);
                     if work.done {
-                        println!(
+                        info!(
                             "worker_index={index} is done, because it matches a filter from worker_index={}; Unstalling all stalled items",
                             request.worker_index
                         );
@@ -239,7 +239,7 @@ impl<A: Arch, C: EncodingAnalysisCache<A> + Send + Sync, S: Scope> Work<A, C> fo
                             stall_updates.push(stall);
                         }
                     } else {
-                        println!(
+                        info!(
                             "Stalling worker_index={index}, because it matches a filter from worker_index={}",
                             request.worker_index
                         );
@@ -255,13 +255,13 @@ impl<A: Arch, C: EncodingAnalysisCache<A> + Send + Sync, S: Scope> Work<A, C> fo
                             // If C does match encodings from A, it will be stalled directly by it.
                             stall_updates.append(&mut status.unstall);
                         } else {
-                            println!("Not stalling, because that would create an infinite loop.");
+                            info!("Not stalling, because that would create an infinite loop.");
                         }
                     }
                 }
             }
         } else {
-            println!("Worker was stalled while running, not updating stalls.")
+            info!("Worker was stalled while running, not updating stalls.")
         }
 
         let stalled_by = WorkItemStatus::compute_stalled(request.worker_index, &data.status);
@@ -273,7 +273,7 @@ impl<A: Arch, C: EncodingAnalysisCache<A> + Send + Sync, S: Scope> Work<A, C> fo
             let stalled_by = WorkItemStatus::compute_stalled(index, &data.status);
             data.status[index].stalled = stalled_by.is_some();
             self.work[index].stalled_by = stalled_by;
-            println!(
+            info!(
                 "Updating stalled status to stalled={} for worker_index={index} ({:?})",
                 data.status[index].stalled,
                 self.work[index].counter.current()
@@ -576,7 +576,7 @@ impl EnumWorkItem {
             self.counter.set_end(self.to);
 
             if !self.counter.apply_filters_to_current(filters, false) {
-                println!("Work item between {:?} and {:?} is done", self.from, self.to);
+                info!("Work item between {:?} and {:?} is done", self.from, self.to);
                 self.done = true;
             }
 

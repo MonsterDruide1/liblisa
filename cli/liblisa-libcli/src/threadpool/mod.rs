@@ -174,7 +174,7 @@ where
                     .name(format!("Worker #{thread_id}"))
                     .spawn_scoped(self.scope, move || {
                         nix::sched::sched_setaffinity(Pid::from_raw(0), &affinity).unwrap();
-                        println!(
+                        info!(
                             "[{thread_id}] Running on CPUs {:?}...",
                             (0..256).filter(|i| affinity.is_set(*i).unwrap_or(false)).collect::<Vec<_>>()
                         );
@@ -185,7 +185,7 @@ where
 
                         thread_active_clone.store(false, Ordering::SeqCst);
 
-                        println!("[{thread_id}] Stopped.");
+                        info!("[{thread_id}] Stopped.");
 
                         oracle
                     })

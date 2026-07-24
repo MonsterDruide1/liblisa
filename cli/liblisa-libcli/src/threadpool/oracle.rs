@@ -4,6 +4,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use liblisa::arch::Arch;
 use liblisa::oracle::{Observation, Oracle, OracleError, OracleSource};
 use liblisa::state::{Addr, AsSystemState, SystemState};
+use log::info;
 
 pub struct PooledOracle<O> {
     source_id: u64,
@@ -102,7 +103,7 @@ impl<S: OracleSource> OraclePool<S> {
         // SAFETY: This ID must be globally unique to ensure that oracles cannot be returned to the wrong VM.
         let key = NEXT_ID.fetch_add(1, Ordering::SeqCst);
 
-        println!("Spawning new VM {key}");
+        info!("Spawning new VM {key}");
         let mut oracles = self.source.start();
         let num_oracles = oracles.len();
         let oracle = oracles.pop().unwrap();
