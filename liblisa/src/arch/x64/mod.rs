@@ -661,9 +661,10 @@ impl CpuState<X64Arch> for X64State {
                     debug_assert_eq!(
                         self.regs[reg.as_num()] & !mask,
                         0,
-                        "For registers with masks, only bits in the mask can be set. New value: {:X}, mask: {:X}",
+                        "For registers with masks, only bits in the mask can be set. New value: {:X}, mask: {:X} for register {}",
                         self.regs[reg.as_num()],
-                        mask
+                        mask,
+                        reg
                     );
                 }
             },
