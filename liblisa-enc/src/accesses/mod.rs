@@ -808,7 +808,7 @@ impl MemoryAccessAnalysis {
 
                 // May be alignment instead of negative memory, so we can't return Ok/Increase
                 Err(OracleError::GeneralFault) => CheckSizeResult::Failed,
-                Err(e @ (OracleError::MultipleInstructionsExecuted | OracleError::Timeout)) => {
+                Err(e @ (OracleError::MultipleInstructionsExecuted | OracleError::Timeout | OracleError::InvalidInstruction)) => {
                     return Err(AccessAnalysisError::Randomization(RandomizationError::OracleError(e)))
                 },
 
