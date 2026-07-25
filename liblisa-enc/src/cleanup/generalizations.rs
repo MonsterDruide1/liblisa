@@ -47,7 +47,9 @@ pub fn remove_incorrect_generalizations<A: Arch, O: Oracle<A>>(o: &mut O, encodi
             let part_values = encoding
                 .parts
                 .iter()
-                .map(|part| rng.r#gen::<u64>() & ((1 << part.size) - 1))
+                .map(|part| {
+                    rng.r#gen::<u64>() & if part.size == 64 { u64::MAX } else { (1 << part.size) - 1 }
+                })
                 .collect::<Vec<_>>();
             if let Ok(instance) = encoding.instantiate(&part_values) {
                 let validity = Validity::infer(o, instance.instr());
