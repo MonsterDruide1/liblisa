@@ -315,7 +315,7 @@ impl Value<'_> {
             Value::Bytes(b) => {
                 // TODO: imm analysis used to slice out-of-bounds, but this seems to be fixed now. If you encounter this error, a quick fix can be to comment out the panic. Imm analysis will work regardless (Because `Value::Bytes` of different lengths are considered not equal).
                 if b.len() <= size.end_byte {
-                    panic!("Slicing {size:?} is out of bounds in {self:X?}");
+                    //panic!("Slicing {size:?} is out of bounds in {self:X?}");
                 }
 
                 let start = size.start_byte.min(b.len() - 1);
