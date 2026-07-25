@@ -5,6 +5,7 @@ use std::marker::PhantomData;
 use liblisa::arch::Register;
 use liblisa::encoding::dataflows::{Dataflow, Dest, Size, Source};
 use liblisa::oracle::{MappableArea, OracleError};
+use liblisa::state::random::RandomizationError::ModifyingValuesFailed;
 use liblisa::state::random::{randomized_bytes_into_buffer, randomized_value};
 use liblisa::state::{Location, SystemState, SystemStateIoPair};
 use liblisa::value::{AsValue, MutValue, OwnedValue, Value};
@@ -452,6 +453,18 @@ impl<'a, A: Arch, O: Oracle<A>> ImmAnalysis<'a, A, O> {
             current_change.normalize();
             Ok(current_change)
         } else {
+            match current_change {
+                Change::Register {
+                    locations: _,
+                    from,
+                    to,
+                } => {
+                    if from.is_flags() || to.is_flags() {
+                        return Err(ModifyingValuesFailed);
+                    }
+                }
+                _ => (),
+            }
             self.find_dataflow_imm_internal(rng, new_state_gen, new_dataflows, threshold_values, current_change)
         }
     }
