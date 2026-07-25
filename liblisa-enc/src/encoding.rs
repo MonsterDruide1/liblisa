@@ -837,7 +837,7 @@ impl<'borrow, A: Arch, O: Oracle<A> + 'borrow, C: EncodingAnalysisCache<A>> Enco
                                 FlowInputLocation::MemoryAddress {
                                     memory_index, ..
                                 } => memory_indexes.contains(memory_index),
-                                _ => unreachable!(),
+                                _ => panic!("Unexpected location: {:?} part_with_memory_offset: {:?}, bits: {:?}, for ({:?}, ({:?}, {:?}), {:?}, {:?})", loc, parts_with_memory_offsets, bits, index, mapping, memory_indexes, mapped_value, base),
                             })
                         })
                         .map(|(offset, _)| *offset);
