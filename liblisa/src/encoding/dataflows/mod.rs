@@ -347,7 +347,7 @@ impl<A: Arch, C> Dataflows<A, C> {
                     let access = &mut self.addresses[index];
                     assert!(
                         access.inputs.iter().all(|input| !matches!(input, Source::Imm(_))),
-                        "Memory access {index} already contains an immediate value: {self:?}, trying to add {location} with offset {offset} and part_index {part_index} and index {index}"
+                        "Memory access {index} already contains an immediate value: {self:?}, trying to add {location:?} with offset {offset} and part_index {part_index} and index {index}"
                     );
 
                     result.push(FlowInputLocation::MemoryAddress {
