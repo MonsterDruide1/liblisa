@@ -193,7 +193,9 @@ impl<'a, A: Arch> DontCareValidator<'a, A> {
             let part_values = encoding
                 .parts
                 .iter()
-                .map(|part| rng.r#gen::<u64>() & ((1 << part.size) - 1))
+                .map(|part| {
+                    rng.r#gen::<u64>() & if part.size == 64 { u64::MAX } else { (1 << part.size) - 1 }
+                })
                 .collect::<Vec<_>>();
             if let Ok(instance) = encoding.instantiate(&part_values) {
                 debug!("Checking instance {instance}");
