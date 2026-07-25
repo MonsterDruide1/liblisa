@@ -417,6 +417,12 @@ impl<A: Arch> EnumerationCommand<A> {
                                             }
 
                                             let new_data = midpoint(from_data, to_data);
+                                            // drop all trailing zeros
+                                            let new_data = new_data
+                                                .iter()
+                                                .copied()
+                                                .take_while(|&b| b != 0)
+                                                .collect::<Vec<_>>();
                                             new_instrs.push(Instruction::new(&new_data));
                                         }
 
