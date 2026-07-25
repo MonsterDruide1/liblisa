@@ -91,9 +91,17 @@ pub fn random_instr_bytes<R: Rng>(rng: &mut R, start: Instruction, end: Option<I
 
     // check that result is in the range [start, end) if end is provided
     debug_assert!(
-        result.iter().zip(start.bytes().iter().copied().chain(std::iter::repeat(0)))
-            .all(|(&r, s)| r >= s),
-        "result should be greater than or equal to start: {start:X} ; result: {result:?}"
+        (|| {
+            for (&r, s) in result.iter().zip(start.bytes().iter().copied().chain(std::iter::repeat(0))) {
+                if r < s {
+                    return false;
+                } else if r > s {
+                    return true;
+                }
+            }
+            true
+        })(),
+        "result should be greater than or equal to start: {start:X} ; end: {end:X?} ; result: {result:?}"
     );
     debug_assert!(
         (|| {
