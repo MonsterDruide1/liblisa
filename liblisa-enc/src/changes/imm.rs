@@ -404,7 +404,7 @@ impl<'a, A: Arch, O: Oracle<A>> ImmAnalysis<'a, A, O> {
             for (index, change) in items.iter_mut().enumerate() {
                 info!("Change {index} = {change:?}");
 
-                let is_guaranteed_invalid = valid_changes.iter().any(|valid| match (valid, &change) {
+                let mut is_guaranteed_invalid = valid_changes.iter().any(|valid| match (valid, &change) {
                     (
                         Change::Register {
                             locations: locations_a,
@@ -422,6 +422,18 @@ impl<'a, A: Arch, O: Oracle<A>> ImmAnalysis<'a, A, O> {
                     },
                     _ => false,
                 });
+                match change {
+                    Change::Register {
+                        locations: _,
+                        from,
+                        to,
+                    } => {
+                        if from.is_flags() || to.is_flags() {
+                            is_guaranteed_invalid = true;
+                        }
+                    }
+                    _ => (),
+                }
 
                 if is_guaranteed_invalid {
                     *change = Change::Invalid;
