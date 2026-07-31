@@ -178,6 +178,7 @@ impl GhidraObserver {
                 bind::ExceptionType_InvalidInstruction => return Err(OracleError::InvalidInstruction),
                 bind::ExceptionType_ComputationError => return Err(OracleError::ComputationError),
                 bind::ExceptionType_GeneralProtectionFault => return Err(OracleError::GeneralFault),
+                bind::ExceptionType_CustomPcodeOpCalled => return Err(OracleError::ComputationError),
                 exception => unreachable!("Ghidra emulator threw unexpected exception: {:?}", exception),
             }
             let new_state = *observation_result.after;
