@@ -4,3 +4,4 @@ perf.data.old
 .vscode
 .gdb_history
 .direnv
+semantics/

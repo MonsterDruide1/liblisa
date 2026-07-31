@@ -18,8 +18,12 @@ liblisa-libcli = { version = "0.1.0", path = "../../cli/liblisa-libcli" }
 liblisa = { version = "0.1.0", path = "../../liblisa" }
 liblisa-ghidra-x64-observer = { version = "0.1.0", path = "../../arch/ghidra-x64/liblisa-ghidra-x64-observer" }
 liblisa-x64-observer = { version = "0.1.0", path = "../../arch/x64/liblisa-x64-observer" }
+liblisa-enc = { version = "0.1.0", path = "../../liblisa-enc" }
 clap = { version = "4.4.8", features = ["derive"] }
 log = "0.4.0"
+serde_json = "1.0"
+serde = { version = "1.0", features = [ "derive" ] }
+rand = "0.8"
 
 [dev-dependencies]
 test-log = "0.2.10"

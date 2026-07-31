@@ -905,10 +905,14 @@ dependencies = [
  "clap",
  "env_logger 0.10.2",
  "liblisa",
+ "liblisa-enc",
  "liblisa-ghidra-x64-observer",
  "liblisa-libcli",
  "liblisa-x64-observer",
  "log",
+ "rand",
+ "serde",
+ "serde_json",
  "test-log",
 ]
 
