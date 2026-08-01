@@ -35,6 +35,13 @@ struct DiffState {
     pub rng: Xoshiro256PlusPlus,
 }
 
+fn is_ghidra_pcode_error(e: &OracleError) -> bool {
+    match e {
+        OracleError::ApiError(e) => e.contains("Ghidra emulator called a custom pcode op"),
+        _ => false,
+    }
+}
+
 fn try_add_memory_mapping(state: &mut SystemState<X64Arch>, addr: Addr) -> bool {
     if addr.page::<X64Arch>() == Addr::new(CpuState::<X64Arch>::gpreg(state.cpu(), GpReg::Rip)).page() {
         // cannot be mapped to the same page => start over with new state
@@ -54,13 +61,13 @@ fn try_report_diff(diff: DifferenceType, before: &SystemState<X64Arch>, state: &
     }
     
     // if diff relates to Ghidra's custom pcode op, do not report it
-    if let DifferenceType::OkErr(OracleError::ApiError(e)) = &diff {
-        if e.contains("Ghidra emulator called a custom pcode op") {
+    if let DifferenceType::ErrOk(e) = &diff {
+        if is_ghidra_pcode_error(e) {
             return false;
         }
     }
-    if let DifferenceType::ErrOk(OracleError::ApiError(e)) = &diff {
-        if e.contains("Ghidra emulator called a custom pcode op") {
+    if let DifferenceType::ErrErr(e, _) = &diff {
+        if is_ghidra_pcode_error(e) {
             return false;
         }
     }
@@ -119,7 +126,10 @@ fn run_instr_single(
         }
         else {
             // neither of them faulted, and we already reported the potential diff => done
-            return Ok(r1.is_ok() && r2.is_ok());
+            return Ok(
+                (r1.is_ok() || r1.is_err_and(|e| is_ghidra_pcode_error(&e)))
+                && (r2.is_ok() || r2.is_err_and(|e| is_ghidra_pcode_error(&e)))
+            );
         }
     }
 }
