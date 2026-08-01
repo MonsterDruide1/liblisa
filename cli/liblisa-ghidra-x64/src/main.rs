@@ -1,12 +1,9 @@
-use std::{fs::File, io::BufReader};
-
 use clap::Parser;
-use liblisa::{arch::x64::{PrefixScope, X64Arch}, encoding::Encoding, oracle::OracleSource, semantics::default::computation::SynthesizedComputation};
+use liblisa::{arch::x64::{PrefixScope, X64Arch}, oracle::OracleSource};
 use liblisa_libcli::CliCommand;
 use liblisa_ghidra_x64_observer::{GhidraOracleSource, GhidraOracle};
 use log::trace;
 use liblisa_x64_observer::{VmOracle, VmOracleSource};
-use liblisa_enc::{DataflowAnalysis, MemoryAccessAnalysis};
 
 use liblisa::oracle::Oracle;
 use liblisa::state::Permissions;
@@ -17,10 +14,8 @@ use liblisa::arch::x64::X64State;
 use liblisa::state::SystemState;
 
 use crate::oracle::GhidraVerifyOracle;
-use crate::diff_oracle::FindDiffOracle;
 
 pub mod oracle;
-pub mod diff_oracle;
 
 pub struct GhidraVerifierOracleSource {}
 impl GhidraVerifierOracleSource {
@@ -66,42 +61,6 @@ pub fn main() {
         println!("Observation result: {}", ok.is_ok());
         println!("Observation result: {ok:?}");
     }*/
-    
-    let mut o = FindDiffOracle::new(
-        GhidraOracle::new(),
-        VmOracleSource::new(None, 1).start().into_iter().next().unwrap(),
-    );
-
-    let encodings = "semantics/amd-7700x.json";
-    let num_instrs_per_encoding = 100;
-
-    let encodings: Vec<Encoding<X64Arch, SynthesizedComputation>> =
-        serde_json::from_reader(BufReader::new(File::open(&encodings).unwrap())).unwrap();
-    for e in encodings.into_iter().take(5) {
-        // 1. run with best_instr
-        if let Some(instr) = e.best_instr() {
-            let _ = MemoryAccessAnalysis::infer::<X64Arch, _>(&mut o, &instr);
-        }
-
-        // 2. estimate number of instructions within encoding
-        let num_instrs = 2u32.pow(e.num_wildcard_bits() as u32);
-
-        // 3. if smaller than threshold, run with all instructions,
-        //    otherwise run with a random sample of instructions
-        if num_instrs <= num_instrs_per_encoding {
-            for instr in e.iter_instrs(&[None], true) {
-                let _ = MemoryAccessAnalysis::infer::<X64Arch, _>(&mut o, &instr);
-            }
-        } else {
-            for instr in e.random_instrs(&[None], &mut rand::thread_rng()) {
-                let _ = MemoryAccessAnalysis::infer::<X64Arch, _>(&mut o, &instr);
-            }
-        }
-
-        println!("Differences found: {}", o.diffs.len());
-        o.diffs.clear();
-    }
-
 
     args.run(|_| GhidraOracleSource::new(), PrefixScope);
 }
