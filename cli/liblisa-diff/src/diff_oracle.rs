@@ -12,11 +12,13 @@ pub struct FindDiffOracle<O1: Oracle<X64Arch>, O2: Oracle<X64Arch>> {
     pub diffs: Vec<Difference>,
 }
 
+#[derive(Clone, Debug)]
 pub struct Difference {
     pub diff_types: DifferenceType,
     pub example_before: SystemState<X64Arch>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
 pub enum DifferenceType {
     OkOk(Vec<OkMismatch>),
     OkErr(OracleError),
@@ -24,6 +26,7 @@ pub enum DifferenceType {
     ErrErr(OracleError, OracleError),
 }
 
+#[derive(Clone, Debug, PartialEq)]
 pub enum OkMismatch {
     // CPU State
     RegMismatch(GpReg, u64, u64),
@@ -70,18 +73,26 @@ impl<O1: Oracle<X64Arch>, O2: Oracle<X64Arch>> Oracle<X64Arch> for FindDiffOracl
         let r1 = self.o1.observe(before);
         let r2 = self.o2.observe(before);
 
-        match (&r1, &r2) {
+        // do not search for differences if custom pcode ops are called
+        // => implementation of instruction knowingly missing in Ghidra
+        if let Err(ApiError(e)) = &r1 {
+            if e.contains("Ghidra emulator called a custom pcode op") {
+                return r1;
+            }
+        }
+
+        let difftype = match (&r1, &r2) {
             // observations are identical, nothing to do
-            (Ok(r1), Ok(r2)) if r1 == r2 => {}
-            (Err(MemoryAccess(a1)), Err(MemoryAccess(a2))) if a1 == a2 => {}
-            (Err(InstructionFetchMemoryAccess(a1)), Err(InstructionFetchMemoryAccess(a2))) if a1 == a2 => {}
-            (Err(InvalidInstruction), Err(InvalidInstruction)) => {}
-            (Err(GeneralFault), Err(GeneralFault)) => {}
-            (Err(Unreliable), Err(Unreliable)) => {}
-            (Err(ComputationError), Err(ComputationError)) => {}
-            (Err(Timeout), Err(Timeout)) => {}
-            (Err(MultipleInstructionsExecuted), Err(MultipleInstructionsExecuted)) => {}
-            (Err(ApiError(e1)), Err(ApiError(e2))) if e1 == e2 => {}
+            (Ok(r1), Ok(r2)) if r1 == r2 => None,
+            (Err(MemoryAccess(a1)), Err(MemoryAccess(a2))) if a1 == a2 => None,
+            (Err(InstructionFetchMemoryAccess(a1)), Err(InstructionFetchMemoryAccess(a2))) if a1 == a2 => None,
+            (Err(InvalidInstruction), Err(InvalidInstruction)) => None,
+            (Err(GeneralFault), Err(GeneralFault)) => None,
+            (Err(Unreliable), Err(Unreliable)) => None,
+            (Err(ComputationError), Err(ComputationError)) => None,
+            (Err(Timeout), Err(Timeout)) => None,
+            (Err(MultipleInstructionsExecuted), Err(MultipleInstructionsExecuted)) => None,
+            (Err(ApiError(e1)), Err(ApiError(e2))) if e1 == e2 => None,
 
             // observations are different, record the difference
             (Ok(r1), Ok(r2)) => {
@@ -112,28 +123,22 @@ impl<O1: Oracle<X64Arch>, O2: Oracle<X64Arch>> Oracle<X64Arch> for FindDiffOracl
                     }
                 }
                 assert!(mismatches.len() > 0);
-                self.diffs.push(Difference {
-                    diff_types: DifferenceType::OkOk(mismatches),
-                    example_before: before.clone(),
-                });
+                Some(DifferenceType::OkOk(mismatches))
             }
             (Ok(_), Err(e)) => {
-                self.diffs.push(Difference {
-                    diff_types: DifferenceType::OkErr(e.clone()),
-                    example_before: before.clone(),
-                });
+                Some(DifferenceType::OkErr(e.clone()))
             }
             (Err(e), Ok(_)) => {
-                self.diffs.push(Difference {
-                    diff_types: DifferenceType::ErrOk(e.clone()),
-                    example_before: before.clone(),
-                });
+                Some(DifferenceType::ErrOk(e.clone()))
             }
             (Err(e1), Err(e2)) => {
-                self.diffs.push(Difference {
-                    diff_types: DifferenceType::ErrErr(e1.clone(), e2.clone()),
-                    example_before: before.clone(),
-                });
+                Some(DifferenceType::ErrErr(e1.clone(), e2.clone()))
+            }
+        };
+
+        if let Some(difftype) = difftype {
+            if !self.diffs.iter().any(|d| d.diff_types == difftype) {
+                self.diffs.push(Difference { diff_types: difftype, example_before: before.clone() });
             }
         }
 
@@ -141,11 +146,7 @@ impl<O1: Oracle<X64Arch>, O2: Oracle<X64Arch>> Oracle<X64Arch> for FindDiffOracl
     }
 
     fn scan_memory_accesses(&mut self, before: &SystemState<X64Arch>) -> Result<Vec<Addr>, OracleError> {
-        let r1 = self.o1.scan_memory_accesses(before)?;
-        let r2 = self.o2.scan_memory_accesses(before)?;
-
-        assert_eq!(r1, r2);
-        Ok(r1)
+        self.o1.scan_memory_accesses(before)
     }
 
     fn debug_dump(&mut self) {

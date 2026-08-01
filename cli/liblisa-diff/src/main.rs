@@ -84,15 +84,16 @@ pub fn main() {
         // 3. if smaller than threshold, run with all instructions,
         //    otherwise run with a random sample of instructions
         let iterator = if num_instrs <= num_instrs_per_encoding {
-            e.iter_instrs(&[None], true).collect::<Vec<_>>()
+            e.iter_instrs(&[None; 10000], true).collect::<Vec<_>>()
         } else {
-            e.random_instrs(&[None], &mut rand::thread_rng()).take(num_instrs_per_encoding).collect::<Vec<_>>()
+            e.random_instrs(&[None; 10000], &mut rand::thread_rng()).take(num_instrs_per_encoding).collect::<Vec<_>>()
         };
         for instr in iterator {
             run_instr(&instr, num_states_per_instr, &mut o, &mut rng).unwrap();
         }
 
         println!("Differences found: {}", o.diffs.len());
+        println!("Differences: {:#?}", o.diffs.take(10).map(|d| d.diff_types).collect::<Vec<_>>());
         o.diffs.clear();
     }
 }
