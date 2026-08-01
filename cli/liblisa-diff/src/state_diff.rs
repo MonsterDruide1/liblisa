@@ -1,0 +1,88 @@
+use liblisa::arch::{Arch, CpuState};
+use liblisa::arch::x64::{GpReg, X64Arch, X87, Xmm};
+use liblisa::oracle::OracleError;
+use liblisa::state::{Addr, SystemState};
+
+#[derive(Clone, Debug)]
+pub struct Difference {
+    pub diff_type: DifferenceType,
+    pub example_before: SystemState<X64Arch>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum DifferenceType {
+    OkOk(Vec<OkMismatch>),
+    OkErr(OracleError),
+    ErrOk(OracleError),
+    ErrErr(OracleError, OracleError),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum OkMismatch {
+    // CPU State
+    RegMismatch(GpReg, u64, u64),
+    XmmMismatch(Xmm, Xmm),
+    X87Mismatch(X87, X87),
+    XmmExceptionFlagsMismatch(u64, u64),
+    XmmDazMismatch(u8, u8),
+    // Mem State
+    MemoryMismatch(Addr, Vec<u8>, Vec<u8>),
+}
+
+pub fn compare(r1: &Result<SystemState<X64Arch>, OracleError>, r2: &Result<SystemState<X64Arch>, OracleError>) -> Option<DifferenceType> {
+    use OracleError::*;
+    match (&r1, &r2) {
+        // observations are identical, nothing to do
+        (Ok(r1), Ok(r2)) if r1 == r2 => None,
+        (Err(MemoryAccess(a1)), Err(MemoryAccess(a2))) if a1 == a2 => None,
+        (Err(InstructionFetchMemoryAccess(a1)), Err(InstructionFetchMemoryAccess(a2))) if a1 == a2 => None,
+        (Err(InvalidInstruction), Err(InvalidInstruction)) => None,
+        (Err(GeneralFault), Err(GeneralFault)) => None,
+        (Err(Unreliable), Err(Unreliable)) => None,
+        (Err(ComputationError), Err(ComputationError)) => None,
+        (Err(Timeout), Err(Timeout)) => None,
+        (Err(MultipleInstructionsExecuted), Err(MultipleInstructionsExecuted)) => None,
+        (Err(ApiError(e1)), Err(ApiError(e2))) if e1 == e2 => None,
+
+        // observations are different, record the difference
+        (Ok(r1), Ok(r2)) => {
+            let mut mismatches = Vec::new();
+            for reg in X64Arch::iter_gpregs() {
+                let v1 = CpuState::<X64Arch>::gpreg(r1.cpu(), reg);
+                let v2 = CpuState::<X64Arch>::gpreg(r2.cpu(), reg);
+                if v1 != v2 {
+                    mismatches.push(OkMismatch::RegMismatch(reg, v1, v2));
+                }
+            }
+            if r1.cpu().xmm != r2.cpu().xmm {
+                mismatches.push(OkMismatch::XmmMismatch(r1.cpu().xmm.clone(), r2.cpu().xmm.clone()));
+            }
+            if r1.cpu().x87 != r2.cpu().x87 {
+                mismatches.push(OkMismatch::X87Mismatch(r1.cpu().x87.clone(), r2.cpu().x87.clone()));
+            }
+            if r1.cpu().xmm_exception_flags != r2.cpu().xmm_exception_flags {
+                mismatches.push(OkMismatch::XmmExceptionFlagsMismatch(r1.cpu().xmm_exception_flags, r2.cpu().xmm_exception_flags));
+            }
+            if r1.cpu().xmm_daz != r2.cpu().xmm_daz {
+                mismatches.push(OkMismatch::XmmDazMismatch(r1.cpu().xmm_daz, r2.cpu().xmm_daz));
+            }
+            for ((addr1, perms1, data1), (addr2, perms2, data2)) in r1.memory().iter().zip(r2.memory().iter()) {
+                assert!(addr1 == addr2 && perms1 == perms2);
+                if data1 != data2 {
+                    mismatches.push(OkMismatch::MemoryMismatch(*addr1, data1.clone(), data2.clone()));
+                }
+            }
+            assert!(mismatches.len() > 0);
+            Some(DifferenceType::OkOk(mismatches))
+        }
+        (Ok(_), Err(e)) => {
+            Some(DifferenceType::OkErr(e.clone()))
+        }
+        (Err(e), Ok(_)) => {
+            Some(DifferenceType::ErrOk(e.clone()))
+        }
+        (Err(e1), Err(e2)) => {
+            Some(DifferenceType::ErrErr(e1.clone(), e2.clone()))
+        }
+    }
+}
