@@ -114,7 +114,7 @@ impl<'a, A: Arch, M: MappableArea> StateGen<'a, A, M> {
     /// This function builds memory access constraints for the random state generation.
     /// If it is not possible to generate a state of non-overlapping memory mappings, this function will return an error.
     pub fn new(accesses: &'a MemoryAccesses<A>, mappable: &'a M) -> Result<Self, RandomizationError> {
-        info!("Determining constraints for {accesses}");
+        debug!("Determining constraints for {accesses}");
         let ps = 1 << A::PAGE_BITS;
         let pm = ps - 1;
         let constraints = accesses

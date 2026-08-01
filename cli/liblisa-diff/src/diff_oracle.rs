@@ -1,9 +1,8 @@
 use liblisa::arch::{Arch, CpuState};
-use liblisa::arch::x64::{GpReg, X64Arch, X64Flag, X87, Xmm};
+use liblisa::arch::x64::{GpReg, X64Arch, X87, Xmm};
 use liblisa::oracle::Observation;
 use liblisa::oracle::{FallbackBatchObserveIter, MappableArea, Oracle, OracleError};
 use liblisa::state::{Addr, AsSystemState, SystemState};
-use log::warn;
 
 /// An oracle that observes execution on two oracles, and panics if the results are not identical.
 pub struct FindDiffOracle<O1: Oracle<X64Arch>, O2: Oracle<X64Arch>> {
