@@ -1,7 +1,8 @@
 use liblisa::{Instruction, arch::{Arch, CpuState, x64::{GpReg, X64Arch}}, encoding::dataflows::{AccessKind, AddressComputation, Dest, Inputs, MemoryAccess, MemoryAccesses, Size, Source}, oracle::{Oracle, OracleError}, state::{Addr, Permissions, SystemState, random::{RandomizationError, StateGen}}};
 use liblisa_enc::AccessAnalysisError;
 
-use crate::{diff_work::DiffThreadState, state_diff::{self, Difference, DifferenceType}};
+use crate::state_diff::{self, Difference, DifferenceType};
+use crate::diff_types::DiffThreadState;
 
 
 fn is_ghidra_pcode_error(e: &OracleError) -> bool {

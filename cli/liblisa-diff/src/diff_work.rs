@@ -6,66 +6,18 @@ use liblisa::encoding::Encoding;
 use liblisa::oracle::Oracle;
 use liblisa::semantics::default::computation::SynthesizedComputation;
 use liblisa_enc::AccessAnalysisError;
-use liblisa_ghidra_x64_observer::GhidraOracle;
-use liblisa_x64_observer::VmOracle;
 use rand::Rng;
-use rand_xoshiro::Xoshiro256PlusPlus;
 use serde::{Deserialize, Serialize};
 
 use liblisa_libcli::threadpool::work::Work;
 
 use crate::diff::run_instr;
-use crate::dummy_oracle_source::{DoubleCheckedMappableArea, DummyOracle};
+use crate::diff_types::*;
+use crate::dummy_oracle_source::DummyOracle;
 use crate::state_diff::Difference;
 
-const NUM_INSTRS_PER_ENCODING: usize = 100;
-const NUM_STATES_PER_INSTR: usize = 2500;
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Diff<A: Arch> {
-    #[serde(default)]
-    pub runtime_ms: u128,
-    pub total_ms: u128,
-    pub encodings: Vec<Encoding<A, SynthesizedComputation>>,
-    pub remaining_entries: Vec<usize>,
-    pub results: Vec<(usize, DiffResult)>,
-}
-
-pub struct DiffRuntimeData {
-    pub last_check: Instant,
-    pub pending: Vec<usize>,
-}
-
-pub struct DiffRequest<A: Arch> {
-    at: Instant,
-    encoding_index: usize,
-    encoding: Encoding<A, SynthesizedComputation>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct DiffResult {
-    pub diffs: Result<Vec<Difference>, AccessAnalysisError<X64Arch>>,
-}
-
-pub struct DiffThreadState {
-    pub o1: GhidraOracle,
-    pub o2: VmOracle,
-    pub mappable: DoubleCheckedMappableArea<<GhidraOracle as Oracle<X64Arch>>::MappableArea, <VmOracle as Oracle<X64Arch>>::MappableArea>,
-    pub diffs: Vec<Difference>,
-    pub rng: Xoshiro256PlusPlus,
-}
-
-impl<A: Arch> std::fmt::Debug for DiffRequest<A> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("DiffRequest")
-            .field("at", &self.at)
-            .field("index", &self.encoding_index)
-            .finish()
-    }
-}
-
-impl<A: Arch> DiffRequest<A> {
-    pub fn diff<O: Oracle<A>, R: Rng>(
+impl DiffRequest {
+    pub fn diff<A: Arch, O: Oracle<A>, R: Rng>(
         &self, oracle: &mut O, rng: &mut R,
     ) -> Result<Vec<Difference>, AccessAnalysisError<X64Arch>> {
         let oracle: &mut DummyOracle<X64Arch> = unsafe {
@@ -73,25 +25,9 @@ impl<A: Arch> DiffRequest<A> {
         };
         let mut state = &mut oracle.state;
 
-        // 1. run with best_instr
-        if let Some(instr) = self.encoding.best_instr() {
-            run_instr(&instr, NUM_STATES_PER_INSTR, &mut state)?;
+        for instr in &self.todo.instructions {
+            run_instr(instr, NUM_STATES_PER_INSTR, &mut state)?;
         }
-
-        // 2. estimate number of instructions within encoding
-        let num_instrs = 2_usize.pow(self.encoding.num_wildcard_bits() as u32);
-
-        // 3. if smaller than threshold, run with all instructions,
-        //    otherwise run with a random sample of instructions
-        let iterator = if num_instrs <= NUM_INSTRS_PER_ENCODING {
-            self.encoding.iter_instrs(&[None; 10000], true).collect::<Vec<_>>()
-        } else {
-            self.encoding.random_instrs(&[None; 10000], &mut rand::thread_rng()).take(NUM_INSTRS_PER_ENCODING).collect::<Vec<_>>()
-        };
-        for instr in iterator {
-            run_instr(&instr, NUM_STATES_PER_INSTR, &mut state)?;
-        }
-
         let diffs = std::mem::take(&mut state.diffs);
         Ok(diffs)
     }
@@ -103,10 +39,10 @@ pub struct DiffArtifact {
     pub result: DiffResult,
 }
 
-impl<A: Arch> Work<A, ()> for Diff<A>
+impl<A: Arch> Work<A, ()> for Diff
 {
     type RuntimeData = DiffRuntimeData;
-    type Request = DiffRequest<A>;
+    type Request = DiffRequest;
     type Result = DiffResult;
     type Artifact = DiffArtifact;
 
@@ -114,11 +50,11 @@ impl<A: Arch> Work<A, ()> for Diff<A>
         let next_entry = self.remaining_entries.iter().find(|e| !data.pending.contains(e));
 
         next_entry.and_then(|&encoding_index| {
-            self.encodings.get(encoding_index).cloned().map(|encoding| {
+            self.todos.get(encoding_index).cloned().map(|todo| {
                 let request = DiffRequest {
                     at: Instant::now(),
                     encoding_index,
-                    encoding,
+                    todo,
                 };
 
                 data.pending.push(encoding_index);
@@ -143,8 +79,8 @@ impl<A: Arch> Work<A, ()> for Diff<A>
             Err(e) => format!("Error: {}", e),
         };
         println!(
-            "Received result for {:X} index={} in {}s: {}",
-            request.encoding.instr(),
+            "Received result for {} index={} in {}s: {}",
+            request.todo.description,
             request.encoding_index,
             request.at.elapsed().as_secs(),
             result_type,
@@ -165,20 +101,43 @@ impl<A: Arch> Work<A, ()> for Diff<A>
     }
 
     fn run<O: Oracle<A>>(oracle: &mut O, _cache: &(), request: &Self::Request) -> Self::Result {
-        println!("Diffing {}", request.encoding);
+        println!("Diffing {}", request.todo.description);
         let result = request.diff(oracle, &mut rand::thread_rng());
         DiffResult { diffs: result }
     }
 }
 
-impl<A: Arch> Diff<A> {
-    pub fn create(encodings: Vec<Encoding<A, SynthesizedComputation>>) -> Self {
-        let num_encodings = encodings.len();
+impl Diff {
+    pub fn create(encodings: Vec<Encoding<X64Arch, SynthesizedComputation>>) -> Self {
+        let todos: Vec<DiffTodoItem> = encodings.iter().map(|encoding| {
+            // estimate number of instructions within encoding
+            let num_instrs = 2_usize.pow(encoding.num_wildcard_bits() as u32);
+
+            // if smaller than threshold, run with all instructions,
+            //   otherwise run with a random sample of instructions
+            let mut instrs = if num_instrs <= NUM_INSTRS_PER_ENCODING {
+                encoding.iter_instrs(&[None; 10000], true).collect::<Vec<_>>()
+            } else {
+                encoding.random_instrs(&[None; 10000], &mut rand::thread_rng()).take(NUM_INSTRS_PER_ENCODING).collect::<Vec<_>>()
+            };
+
+            // also run with best_instr, if exists
+            if let Some(best) = encoding.best_instr() {
+                instrs.push(best);
+            }
+            DiffTodoItem {
+                instructions: instrs,
+                description: format!("{}", encoding),
+            }
+        }).collect();
+
+        let remaining_entries = (0..todos.len()).collect();
+
         Diff {
             runtime_ms: 0,
             total_ms: 0,
-            encodings,
-            remaining_entries: (0..num_encodings).collect(),
+            todos,
+            remaining_entries,
             results: Vec::new(),
         }
     }

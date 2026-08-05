@@ -7,7 +7,7 @@ use nix::sched::CpuSet;
 use rand::{Rng, SeedableRng};
 use rand_xoshiro::Xoshiro256PlusPlus;
 
-use crate::diff_work::DiffThreadState;
+use crate::diff_types::DiffThreadState;
 
 pub fn create_dummy_oracle_source<A: liblisa::arch::Arch>(_: CpuSet) -> impl liblisa::oracle::OracleSource<Oracle = impl liblisa::oracle::Oracle<A>> {
     DummyOracleSource::<A> {

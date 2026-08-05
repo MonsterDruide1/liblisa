@@ -5,7 +5,8 @@ use liblisa::encoding::Encoding;
 use liblisa::semantics::default::computation::SynthesizedComputation;
 use liblisa_libcli::{clear_screen, threadpool::ThreadPool};
 
-use crate::{diff_work::{Diff, DiffResult, DiffRuntimeData}, dummy_oracle_source};
+use crate::dummy_oracle_source;
+use crate::diff_types::{Diff, DiffResult, DiffRuntimeData};
 
 #[derive(Clone, Debug, PartialEq, clap::ValueEnum)]
 enum ResultType {
@@ -50,7 +51,7 @@ pub struct DiffCommand {
 }
 
 impl DiffCommand {
-    fn save_state(&self, state: &Diff<X64Arch>) {
+    fn save_state(&self, state: &Diff) {
         {
             let file = File::create(self.tmp_state_path()).unwrap();
             serde_json::to_writer(file, state).unwrap();
@@ -80,8 +81,8 @@ impl DiffCommand {
             Verb::Run { threads, ramp_up } => {
                 println!("Loading base data...");
                 let file = File::open(self.state_path()).unwrap();
-                let synthesis: Diff<X64Arch> = serde_json::from_reader(file).unwrap();
-                let synthesis: Mutex<(Diff<X64Arch>, DiffRuntimeData)> = Mutex::new({
+                let synthesis: Diff = serde_json::from_reader(file).unwrap();
+                let synthesis: Mutex<(Diff, DiffRuntimeData)> = Mutex::new({
                     let runtime_data = DiffRuntimeData {
                         last_check: Instant::now(),
                         pending: Vec::new(),
@@ -116,7 +117,7 @@ impl DiffCommand {
 
                     {
                         let mut pool = ThreadPool::from_work(
-                            scope, dummy_oracle_source::create_dummy_oracle_source, &(), &synthesis, &save_artifact
+                            scope, dummy_oracle_source::create_dummy_oracle_source::<X64Arch>, &(), &synthesis, &save_artifact
                         );
 
                         // TODO: Automatically determine the right size
@@ -181,13 +182,13 @@ impl DiffCommand {
             Verb::Status { watch, time } => {
                 println!("Loading base data...");
                 let file = File::open(self.state_path()).unwrap();
-                let diff: Diff<X64Arch> = serde_json::from_reader(file).unwrap();
+                let diff: Diff = serde_json::from_reader(file).unwrap();
 
                 if *watch {
                     loop {
                         // TODO: Watch artifacts file and reload on write!
                         let file = File::open(self.state_path()).unwrap();
-                        let diff: Diff<X64Arch> = serde_json::from_reader(file).unwrap();
+                        let diff: Diff = serde_json::from_reader(file).unwrap();
                         clear_screen();
                         Self::print_status(&diff);
 
@@ -204,23 +205,23 @@ impl DiffCommand {
             Verb::Dump { result: r } => {
                 println!("Loading base data...");
                 let file = File::open(self.state_path()).unwrap();
-                let diff: Diff<X64Arch> = serde_json::from_reader(file).unwrap();
+                let diff: Diff = serde_json::from_reader(file).unwrap();
 
                 for (index, DiffResult { diffs: result }) in diff.results.iter() {
                     match result {
                         Ok(diffs) if diffs.is_empty() && *r == ResultType::OK => {
-                            println!("Index {index}: {}", diff.encodings[*index]);
+                            println!("Index {index}: {}", diff.todos[*index].description);
                             println!("  Result: OK");
                         },
                         Ok(diffs) if !diffs.is_empty() && *r == ResultType::Mismatch => {
-                            println!("Index {index}: {}", diff.encodings[*index]);
+                            println!("Index {index}: {}", diff.todos[*index].description);
                             println!("  Result: MISMATCH");
                             for diff in diffs {
                                 println!("    Diff: {:?}", diff);
                             }
                         },
                         Err(e) if *r == ResultType::Failure => {
-                            println!("Index {index}: {}", diff.encodings[*index]);
+                            println!("Index {index}: {}", diff.todos[*index].description);
                             println!("  Result: FAILURE");
                             println!("    Error: {}", e);
                         },
@@ -231,7 +232,7 @@ impl DiffCommand {
         }
     }
 
-    fn print_status(diff: &Diff<X64Arch>) {
+    fn print_status(diff: &Diff) {
         let mut ok = 0;
         let mut mismatch = 0;
         let mut failure = 0;
@@ -244,7 +245,7 @@ impl DiffCommand {
         }
 
         let num_processed = diff.results.len();
-        let num_encodings = diff.encodings.len();
+        let num_encodings = diff.todos.len();
         let seconds_running = diff.runtime_ms / 1000;
         let hours_running = seconds_running as f64 / 3600.0;
         let encodings_per_hour = num_processed as f64 / hours_running;

@@ -7,6 +7,7 @@ pub mod diff_action;
 pub mod dummy_oracle_source;
 pub mod diff_work;
 pub mod diff;
+pub mod diff_types;
 
 pub fn main() -> Result<(), AccessAnalysisError<X64Arch>> {
     env_logger::init();
