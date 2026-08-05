@@ -127,7 +127,7 @@ impl<A: Arch, C: Computation> Display for Encoding<A, C> {
                 .map(|b| format!("{b:02X}"))
                 .join("")
         )?;
-        writeln!(
+        /*writeln!(
             f,
             "Errors: {}",
             self.errors.iter().map(|&e| if e { "!" } else { "." }).join("")
@@ -186,7 +186,7 @@ impl<A: Arch, C: Computation> Display for Encoding<A, C> {
 
         if !self.write_ordering.is_empty() {
             writeln!(f, "write ordering: {:?}", self.write_ordering)?;
-        }
+        }*/
 
         Ok(())
     }
