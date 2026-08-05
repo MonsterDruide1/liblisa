@@ -14,7 +14,7 @@ use crate::state_diff::Difference;
 
 
 pub const NUM_INSTRS_PER_ENCODING: usize = 100;
-pub const NUM_STATES_PER_INSTR: usize = 2500;
+pub const NUM_STATES_PER_INSTR: usize = 250;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DiffTodoItem {
