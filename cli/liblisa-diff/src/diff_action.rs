@@ -1,11 +1,11 @@
 use std::{error::Error, fs::{self, File}, io::BufReader, path::PathBuf, sync::{Mutex, atomic::{AtomicBool, Ordering}, mpsc::{RecvTimeoutError, channel}}, thread::{scope, spawn}, time::{Duration, Instant}};
 
-use liblisa::arch::x64::X64Arch;
+use liblisa::{Instruction, arch::x64::X64Arch};
 use liblisa::encoding::Encoding;
 use liblisa::semantics::default::computation::SynthesizedComputation;
 use liblisa_libcli::{clear_screen, threadpool::ThreadPool};
 
-use crate::dummy_oracle_source;
+use crate::{diff::{create_state, run_instr}, diff_types::NUM_STATES_PER_INSTR, dummy_oracle_source};
 use crate::diff_types::{Diff, DiffResult, DiffRuntimeData};
 
 #[derive(Clone, Debug, PartialEq, clap::ValueEnum)]
@@ -39,7 +39,10 @@ enum Verb {
     },
     Dump {
         result: ResultType,
-    }
+    },
+    Test {
+        instr: Instruction,
+    },
 }
 
 #[derive(Clone, Debug, clap::Parser)]
@@ -228,6 +231,10 @@ impl DiffCommand {
                         _ => {},
                     }
                 }
+            }
+            Verb::Test { instr} => {
+                let mut state = create_state();
+                run_instr(instr, NUM_STATES_PER_INSTR, &mut state).unwrap();
             }
         }
     }

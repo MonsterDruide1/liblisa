@@ -1,13 +1,17 @@
+use liblisa_ghidra_x64_observer::GhidraOracle;
+use liblisa_x64_observer::VmOracleSource;
 use log::debug;
+use rand::{Rng, SeedableRng};
 use rand_xoshiro::Xoshiro256PlusPlus;
 
 use liblisa::Instruction;
 use liblisa::arch::{Arch, CpuState, x64::{GpReg, X64Arch}};
 use liblisa::encoding::dataflows::{AccessKind, AddressComputation, Dest, Inputs, MemoryAccess, MemoryAccesses, Size, Source};
-use liblisa::oracle::{Oracle, OracleError};
+use liblisa::oracle::{Oracle, OracleError, OracleSource};
 use liblisa::state::{Addr, Page, Permissions, SystemState, random::{RandomizationError, StateGen, randomized_bytes}};
 use liblisa_enc::AccessAnalysisError;
 
+use crate::dummy_oracle_source::DoubleCheckedMappableArea;
 use crate::state_diff::{self, Difference, DifferenceType};
 use crate::diff_types::DiffThreadState;
 
@@ -191,4 +195,18 @@ pub fn run_instr(
     }
 
     Ok(())
+}
+
+pub fn create_state() -> DiffThreadState {
+    
+    let o1 = GhidraOracle::new();
+    let o2 = VmOracleSource::new(None, 1).start().into_iter().next().unwrap();
+    let mappable: DoubleCheckedMappableArea<liblisa_ghidra_x64_observer::GhidraMappableArea, liblisa_x64_observer::VmMappableArea> = DoubleCheckedMappableArea(o1.mappable_area(), o2.mappable_area());
+    DiffThreadState {
+        o1,
+        o2,
+        mappable,
+        diffs: vec![],
+        rng: Xoshiro256PlusPlus::seed_from_u64(rand::thread_rng().r#gen())
+    }
 }

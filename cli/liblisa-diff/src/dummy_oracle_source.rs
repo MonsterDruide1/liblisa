@@ -1,13 +1,9 @@
 use std::marker::PhantomData;
 
-use liblisa::{oracle::{MappableArea, Oracle}, state::Addr};
-use liblisa_ghidra_x64_observer::GhidraOracle;
-use liblisa_x64_observer::VmOracleSource;
+use liblisa::{oracle::MappableArea, state::Addr};
 use nix::sched::CpuSet;
-use rand::{Rng, SeedableRng};
-use rand_xoshiro::Xoshiro256PlusPlus;
 
-use crate::diff_types::DiffThreadState;
+use crate::{diff::create_state, diff_types::DiffThreadState};
 
 pub fn create_dummy_oracle_source<A: liblisa::arch::Arch>(_: CpuSet) -> impl liblisa::oracle::OracleSource<Oracle = impl liblisa::oracle::Oracle<A>> {
     DummyOracleSource::<A> {
@@ -16,7 +12,7 @@ pub fn create_dummy_oracle_source<A: liblisa::arch::Arch>(_: CpuSet) -> impl lib
 }
 
 #[derive(Clone, Debug)]
-pub struct DoubleCheckedMappableArea<A: MappableArea, B: MappableArea>(A, B);
+pub struct DoubleCheckedMappableArea<A: MappableArea, B: MappableArea>(pub A, pub B);
 
 impl<A: MappableArea, B: MappableArea> MappableArea for DoubleCheckedMappableArea<A, B> {
     fn can_map(&self, addr: Addr) -> bool {
@@ -32,18 +28,8 @@ impl<A: liblisa::arch::Arch> liblisa::oracle::OracleSource for DummyOracleSource
     type Oracle = DummyOracle<A>;
 
     fn start(&self) -> Vec<Self::Oracle> {
-        let o1 = GhidraOracle::new();
-        let o2 = VmOracleSource::new(None, 1).start().into_iter().next().unwrap();
-        let mappable: DoubleCheckedMappableArea<liblisa_ghidra_x64_observer::GhidraMappableArea, liblisa_x64_observer::VmMappableArea> = DoubleCheckedMappableArea(o1.mappable_area(), o2.mappable_area());
-        let state = DiffThreadState {
-            o1,
-            o2,
-            mappable,
-            diffs: vec![],
-            rng: Xoshiro256PlusPlus::seed_from_u64(rand::thread_rng().r#gen())
-        };
         vec![DummyOracle {
-            state,
+            state: create_state(),
             _phantom: PhantomData,
         }]
     }
