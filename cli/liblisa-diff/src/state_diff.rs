@@ -60,7 +60,7 @@ pub fn compare(r1: &Result<SystemState<X64Arch>, OracleError>, r2: &Result<Syste
                 }
             }
             // 6 flags exist in `flagreg_to_flags` of RFlags
-            for flag in X64Arch::flagreg_to_flags(X64Arch::reg(GpReg::RFlags), 0, 6) {
+            for flag in X64Arch::flagreg_to_flags(X64Arch::reg(GpReg::RFlags), 0, 5) {
                 let v1 = CpuState::<X64Arch>::flag(r1.cpu(), *flag);
                 let v2 = CpuState::<X64Arch>::flag(r2.cpu(), *flag);
                 if v1 != v2 {
