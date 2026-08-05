@@ -32,6 +32,20 @@ pub enum OkMismatch {
     MemoryMismatch(Addr, Vec<u8>, Vec<u8>),
 }
 
+impl DifferenceType {
+    /// checks whether other is a subset of self (i.e. all differences in other are also present in self)
+    pub fn contains(&self, other: &Self) -> bool {
+        use DifferenceType::*;
+        match (self, other) {
+            (OkOk(m1), OkOk(m2)) => m2.iter().all(|m| m1.contains(m)),
+            (OkErr(e1), OkErr(e2)) => e1 == e2,
+            (ErrOk(e1), ErrOk(e2)) => e1 == e2,
+            (ErrErr(e1a, e1b), ErrErr(e2a, e2b)) => e1a == e2a && e1b == e2b,
+            _ => false,
+        }
+    }
+}
+
 impl PartialEq for OkMismatch {
     fn eq(&self, other: &Self) -> bool {
         use OkMismatch::*;

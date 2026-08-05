@@ -26,7 +26,7 @@ fn try_add_memory_mapping(state: &mut SystemState<X64Arch>, addr: Addr) -> bool 
 
 fn try_report_diff(diff: DifferenceType, before: &SystemState<X64Arch>, state: &mut DiffThreadState) -> bool {
     // if diff has already been reported, do not report again
-    if state.diffs.iter().any(|d| d.diff_type == diff) {
+    if state.diffs.iter().any(|d| d.diff_type.contains(&diff)) {
         return false;
     }
     
