@@ -1,3 +1,4 @@
+use log::debug;
 use rand_xoshiro::Xoshiro256PlusPlus;
 
 use liblisa::Instruction;
@@ -71,11 +72,11 @@ fn try_report_diff(diff: DifferenceType, before: &SystemState<X64Arch>, state: &
         return false;
     }
 
-    println!("Found diff: {}, adding to existing list:", diff);
+    debug!("Found diff: {}, adding to existing list:", diff);
     for d in &state.diffs {
-        println!("  {:?}", d.diff_type);
+        debug!("  {:?}", d.diff_type);
     }
-    println!("  {:?}", before);
+    debug!("  {:?}", before);
 
     // seems good, delete smaller existing diffs and report this one
     state.diffs.retain(|d| !diff.contains(&d.diff_type));
@@ -122,6 +123,16 @@ fn run_instr_single(
                 if !try_add_memory_mapping(&mut before, *addr, &mut state.rng) {
                     before = state_gen.randomize_new(&mut state.rng)?;
                 }
+                continue;
+            }
+        }
+
+        // special case: if CPU throws General Fault with address that is not 16-byte aligned
+        // and Ghidra reports MemoryAccess, it's because Ghidra doesn't handle unaligned accesses properly
+        // => randomize new state and try again
+        if let (Err(OracleError::MemoryAccess(addr)), Err(OracleError::GeneralFault)) = (&r1, &r2) {
+            if addr.as_u64() % 16 != 0 {
+                before = state_gen.randomize_new(&mut state.rng)?;
                 continue;
             }
         }
