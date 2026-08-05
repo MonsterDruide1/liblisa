@@ -42,7 +42,8 @@ fn try_report_diff(diff: DifferenceType, before: &SystemState<X64Arch>, state: &
         }
     }
 
-    // seems good, report new diff now
+    // seems good, delete smaller existing diffs and report this one
+    state.diffs.retain(|d| !diff.contains(&d.diff_type));
     state.diffs.push(Difference {
         diff_type: diff,
         example_before: before.clone(),

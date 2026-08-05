@@ -90,7 +90,7 @@ impl DiffCommand {
                     (synthesis, runtime_data)
                 });
 
-                let save_artifact = move |artifact| {};
+                let save_artifact = move |_| {};
 
                 let (send, recv) = channel();
                 spawn(|| {
