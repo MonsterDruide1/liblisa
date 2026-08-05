@@ -1,6 +1,7 @@
 use liblisa::arch::{Arch, CpuState, Register};
 use liblisa::arch::x64::{GpReg, X64Arch, X64Flag, X87, Xmm};
 use liblisa::oracle::OracleError;
+use liblisa::state::LocationKind::Memory;
 use liblisa::state::{Addr, SystemState};
 use serde::{Deserialize, Serialize};
 
@@ -18,7 +19,7 @@ pub enum DifferenceType {
     ErrErr(OracleError, OracleError),
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum OkMismatch {
     // CPU State
     RegMismatch(GpReg, u64, u64),
@@ -29,6 +30,27 @@ pub enum OkMismatch {
     XmmDazMismatch(u8, u8),
     // Mem State
     MemoryMismatch(Addr, Vec<u8>, Vec<u8>),
+}
+
+impl PartialEq for OkMismatch {
+    fn eq(&self, other: &Self) -> bool {
+        use OkMismatch::*;
+        match (self, other) {
+            // special case: memory changes are always considered equal
+            (MemoryMismatch(_, _, _), MemoryMismatch(_, _, _)) => true,
+            // special cases: consider location of mismatch, ignore values
+            (RegMismatch(r1, _, _), RegMismatch(r2, _, _)) => r1 == r2,
+            (FlagsMismatch(f1, _, _), FlagsMismatch(f2, _, _)) => f1 == f2,
+
+            // standard cases: consider everything about mismatch
+            (XmmMismatch(x1, x2), XmmMismatch(y1, y2)) => x1 == y1 && x2 == y2,
+            (X87Mismatch(x1, x2), X87Mismatch(y1, y2)) => x1 == y1 && x2 == y2,
+            (XmmExceptionFlagsMismatch(f1, f2), XmmExceptionFlagsMismatch(g1, g2)) => f1 == g1 && f2 == g2,
+            (XmmDazMismatch(d1, d2), XmmDazMismatch(e1, e2)) => d1 == e1 && d2 == e2,
+            // all other combinations are not equal
+            _ => false,
+        }
+    }
 }
 
 pub fn compare(r1: &Result<SystemState<X64Arch>, OracleError>, r2: &Result<SystemState<X64Arch>, OracleError>) -> Option<DifferenceType> {
