@@ -1,8 +1,8 @@
 use liblisa::arch::{Arch, CpuState, Register};
-use liblisa::arch::x64::{GpReg, X64Arch, X64Flag, X87, Xmm};
+use liblisa::arch::x64::{GpReg, X64Arch, X64Flag, X64Reg, X87, XmmReg};
 use liblisa::oracle::OracleError;
-use liblisa::state::LocationKind::Memory;
 use liblisa::state::{Addr, SystemState};
+use liblisa::value::Value;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -24,7 +24,7 @@ pub enum OkMismatch {
     // CPU State
     RegMismatch(GpReg, u64, u64),
     FlagsMismatch(X64Flag, bool, bool),
-    XmmMismatch(Xmm, Xmm),
+    XmmMismatch(XmmReg, [u8; 32], [u8; 32]),
     X87Mismatch(X87, X87),
     XmmExceptionFlagsMismatch(u64, u64),
     XmmDazMismatch(u8, u8),
@@ -55,9 +55,9 @@ impl PartialEq for OkMismatch {
             // special cases: consider location of mismatch, ignore values
             (RegMismatch(r1, _, _), RegMismatch(r2, _, _)) => r1 == r2,
             (FlagsMismatch(f1, _, _), FlagsMismatch(f2, _, _)) => f1 == f2,
+            (XmmMismatch(r1, _, _), XmmMismatch(r2, _, _)) => r1 == r2,
 
             // standard cases: consider everything about mismatch
-            (XmmMismatch(x1, x2), XmmMismatch(y1, y2)) => x1 == y1 && x2 == y2,
             (X87Mismatch(x1, x2), X87Mismatch(y1, y2)) => x1 == y1 && x2 == y2,
             (XmmExceptionFlagsMismatch(f1, f2), XmmExceptionFlagsMismatch(g1, g2)) => f1 == g1 && f2 == g2,
             (XmmDazMismatch(d1, d2), XmmDazMismatch(e1, e2)) => d1 == e1 && d2 == e2,
@@ -103,8 +103,18 @@ pub fn compare(r1: &Result<SystemState<X64Arch>, OracleError>, r2: &Result<Syste
                     mismatches.push(OkMismatch::FlagsMismatch(*flag, v1, v2));
                 }
             }
-            if r1.cpu().xmm != r2.cpu().xmm {
-                mismatches.push(OkMismatch::XmmMismatch(r1.cpu().xmm.clone(), r2.cpu().xmm.clone()));
+            for reg in 0..16 {
+                let Value::Bytes(v1) = CpuState::<X64Arch>::reg(r1.cpu(), X64Reg::Xmm(XmmReg::Reg(reg))) else {
+                    panic!("Expected XMM register to be of type Value::Bytes");
+                };
+                let v1: [u8; 32] = v1.try_into().unwrap();
+                let Value::Bytes(v2) = CpuState::<X64Arch>::reg(r2.cpu(), X64Reg::Xmm(XmmReg::Reg(reg))) else {
+                    panic!("Expected XMM register to be of type Value::Bytes");
+                };
+                let v2: [u8; 32] = v2.try_into().unwrap();
+                if v1 != v2 {
+                    mismatches.push(OkMismatch::XmmMismatch(XmmReg::Reg(reg), v1, v2));
+                }
             }
             if r1.cpu().x87 != r2.cpu().x87 {
                 mismatches.push(OkMismatch::X87Mismatch(r1.cpu().x87.clone(), r2.cpu().x87.clone()));
