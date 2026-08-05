@@ -1,6 +1,6 @@
 use liblisa_ghidra_x64_observer::GhidraOracle;
 use liblisa_x64_observer::VmOracleSource;
-use log::debug;
+use log::{debug, error, trace};
 use rand::{Rng, SeedableRng};
 use rand_xoshiro::Xoshiro256PlusPlus;
 
@@ -101,7 +101,7 @@ fn try_report_diff(diff: DifferenceType, before: &SystemState<X64Arch>, state: &
 fn run_instr_single(
     instr: &Instruction,
     state: &mut DiffThreadState,
-) -> Result<bool, RandomizationError> {
+) -> Result<bool, AccessAnalysisError<X64Arch>> {
     let accesses: MemoryAccesses<X64Arch> = MemoryAccesses {
         instr: *instr,
         memory: vec![MemoryAccess {
@@ -168,6 +168,15 @@ fn run_instr_single(
         }
         else {
             // neither of them faulted, and we already reported the potential diff => done
+            trace!("Instruction executed on both oracles without page fault: {:?}", instr);
+            trace!("  Ghidra result: {:?}", r1);
+            trace!("  VM result: {:?}", r2);
+
+            // if both agree that the instruction is invalid, throw harder error to abort early
+            if let (Err(OracleError::InvalidInstruction), Err(OracleError::InvalidInstruction)) = (&r1, &r2) {
+                return Err(AccessAnalysisError::InvalidInstruction);
+            }
+
             return Ok(
                 (r1.is_ok() || r1.is_err_and(|e| is_ghidra_pcode_error(&e)))
                 && (r2.is_ok() || r2.is_err_and(|e| is_ghidra_pcode_error(&e)))
@@ -185,6 +194,7 @@ pub fn run_instr(
     let mut err = 0;
     while ok < num_states {
         if err > num_states*3 {
+            error!("Instruction keeps faulting ({} ok, {} err), aborting: {:?}", ok, err, instr);
             return Err(AccessAnalysisError::InstructionKeepsFaulting);
         }
         if run_instr_single(instr, state)? {
