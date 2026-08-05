@@ -109,22 +109,25 @@ impl<A: Arch> Work<A, ()> for Diff
 
 impl Diff {
     pub fn create(encodings: Vec<Encoding<X64Arch, SynthesizedComputation>>) -> Self {
-        let todos: Vec<DiffTodoItem> = encodings.iter().map(|encoding| {
+        let todos: Vec<DiffTodoItem> = encodings.iter().enumerate().map(|(i, encoding)| {
+            if i % 100 == 0 {
+                println!("Preparing diff for encoding {}: {}", i, encoding);
+            }
             // estimate number of instructions within encoding
-            let num_instrs = 2_usize.pow(encoding.num_wildcard_bits() as u32);
+            let num_instrs = 2_usize.checked_pow(encoding.num_wildcard_bits() as u32);
+            let use_all = if let Some(num_instrs) = num_instrs {
+                num_instrs <= NUM_INSTRS_PER_ENCODING
+            } else {
+                false
+            };
 
             // if smaller than threshold, run with all instructions,
             //   otherwise run with a random sample of instructions
-            let mut instrs = if num_instrs <= NUM_INSTRS_PER_ENCODING {
+            let mut instrs = if use_all {
                 encoding.iter_instrs(&[None; 10000], true).collect::<Vec<_>>()
             } else {
                 encoding.random_instrs(&[None; 10000], &mut rand::thread_rng()).take(NUM_INSTRS_PER_ENCODING).collect::<Vec<_>>()
             };
-
-            // also run with best_instr, if exists
-            if let Some(best) = encoding.best_instr() {
-                instrs.push(best);
-            }
             DiffTodoItem {
                 instructions: instrs,
                 description: format!("{}", encoding),
