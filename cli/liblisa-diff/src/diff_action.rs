@@ -234,7 +234,9 @@ impl DiffCommand {
             }
             Verb::Test { instr} => {
                 let mut state = create_state();
-                run_instr(instr, NUM_STATES_PER_INSTR, &mut state).unwrap();
+                println!("Running instruction...");
+                println!("{:?}", run_instr(instr, NUM_STATES_PER_INSTR, &mut state));
+                println!("Observed diffs: {:?}", state.diffs);
             }
         }
     }

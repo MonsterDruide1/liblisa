@@ -208,7 +208,6 @@ pub fn run_instr(
 }
 
 pub fn create_state() -> DiffThreadState {
-    
     let o1 = GhidraOracle::new();
     let o2 = VmOracleSource::new(None, 1).start().into_iter().next().unwrap();
     let mappable: DoubleCheckedMappableArea<liblisa_ghidra_x64_observer::GhidraMappableArea, liblisa_x64_observer::VmMappableArea> = DoubleCheckedMappableArea(o1.mappable_area(), o2.mappable_area());
