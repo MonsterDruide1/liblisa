@@ -8,7 +8,7 @@ use crate::state::{Addr, Area};
 pub type MemoryEntry = (Addr, Permissions, Vec<u8>);
 
 /// Memory state of a CPU.
-#[derive(Clone, Default, PartialEq, Eq)]
+#[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MemoryState {
     pub data: Box<[MemoryEntry]>,
 }

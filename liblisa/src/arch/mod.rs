@@ -30,7 +30,7 @@ where
     Self: Sized,
 {
     /// The CPU state representation.
-    type CpuState: CpuState<Self> + Clone + PartialEq + Eq + Send + Sync + Debug + Display;
+    type CpuState: CpuState<Self> + Clone + PartialEq + Eq + Send + Sync + Debug + Display + Serialize + DeserializeOwned;
 
     /// The register representation.
     type Reg: Register

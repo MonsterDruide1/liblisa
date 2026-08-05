@@ -889,6 +889,7 @@ dependencies = [
  "liblisa-libcli",
  "liblisa-x64-observer",
  "log",
+ "nix 0.27.1",
  "rand",
  "rand_xoshiro",
  "serde",

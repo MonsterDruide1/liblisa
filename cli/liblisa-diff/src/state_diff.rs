@@ -2,14 +2,15 @@ use liblisa::arch::{Arch, CpuState};
 use liblisa::arch::x64::{GpReg, X64Arch, X87, Xmm};
 use liblisa::oracle::OracleError;
 use liblisa::state::{Addr, SystemState};
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Difference {
     pub diff_type: DifferenceType,
     pub example_before: SystemState<X64Arch>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum DifferenceType {
     OkOk(Vec<OkMismatch>),
     OkErr(OracleError),
@@ -17,7 +18,7 @@ pub enum DifferenceType {
     ErrErr(OracleError, OracleError),
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum OkMismatch {
     // CPU State
     RegMismatch(GpReg, u64, u64),

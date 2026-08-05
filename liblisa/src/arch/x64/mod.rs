@@ -321,7 +321,7 @@ fn translate_state_byte_to_raw_offset(b: usize) -> Option<usize> {
 
 /// A struct that enforces alignment to 32-byte boundaries.
 #[repr(align(32))]
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Align32<T>(pub T);
 
 impl<T> Deref for Align32<T> {
@@ -341,7 +341,7 @@ impl<T> DerefMut for Align32<T> {
 }
 
 /// x86-64 XMM state.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Xmm {
     pub regs: Align32<[[u8; 32]; 16]>,
 }
@@ -371,7 +371,7 @@ impl Xmm {
 }
 
 /// x87 state.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct X87 {
     /// 80-bit floating-point registers
     pub fpr: [[u8; 10]; 8],
@@ -423,7 +423,7 @@ impl Display for X87Reg {
 
 /// The CPU state of the x86-64 architecture.
 #[repr(C, align(32))]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct X64State {
     /// General purpose registers
     pub regs: Align32<[u64; NUM_GPREGS]>,

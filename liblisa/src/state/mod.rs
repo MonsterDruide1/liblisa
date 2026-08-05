@@ -19,6 +19,7 @@ pub use addr::{Addr, Area, Page};
 pub use byteview::*;
 pub use locs::*;
 pub use memory::*;
+use serde::{Deserialize, Serialize};
 pub use split_dests::SplitDests;
 
 /// The maximum number of bytes that a single memory mapping can be.
@@ -44,7 +45,7 @@ impl<'a, A: Arch> From<(&'a SystemState<A>, &'a SystemState<A>)> for SystemState
 }
 
 /// A CPU state consisting of the architecture-specific state part and memory mappings.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SystemState<A: Arch> {
     pub cpu: Box<A::CpuState>,
     pub memory: MemoryState,
