@@ -207,19 +207,21 @@ impl DiffCommand {
                 let diff: Diff<X64Arch> = serde_json::from_reader(file).unwrap();
 
                 for (index, DiffResult { diffs: result }) in diff.results.iter() {
-                    println!("Index {index}: {}", diff.encodings[*index]);
                     match result {
                         Ok(diffs) if diffs.is_empty() && *r == ResultType::OK => {
-                            println!("Result: OK");
+                            println!("Index {index}: {}", diff.encodings[*index]);
+                            println!("  Result: OK");
                         },
                         Ok(diffs) if !diffs.is_empty() && *r == ResultType::Mismatch => {
-                            println!("Result: MISMATCH");
+                            println!("Index {index}: {}", diff.encodings[*index]);
+                            println!("  Result: MISMATCH");
                             for diff in diffs {
                                 println!("    Diff: {:?}", diff);
                             }
                         },
                         Err(e) if *r == ResultType::Failure => {
-                            println!("Result: FAILURE");
+                            println!("Index {index}: {}", diff.encodings[*index]);
+                            println!("  Result: FAILURE");
                             println!("    Error: {}", e);
                         },
                         _ => {},

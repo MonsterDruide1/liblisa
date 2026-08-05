@@ -109,7 +109,7 @@ impl<A: Arch, X, C: Computation> Display for InputsWithParts<'_, A, X, C> {
 
 impl<A: Arch, C: Computation> Display for Encoding<A, C> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(
+        write!(
             f,
             "{} [{}]",
             self.bits
