@@ -239,7 +239,7 @@ impl Area {
     /// Returns the end address of the area.
     /// May be smaller than the start address if the area wraps around.
     #[inline]
-    fn end_addr(&self) -> u64 {
+    pub fn end_addr(&self) -> u64 {
         self.addr.0.wrapping_add(self.size - 1)
     }
 

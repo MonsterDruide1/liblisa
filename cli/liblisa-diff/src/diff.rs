@@ -1,4 +1,8 @@
-use liblisa::{Instruction, arch::{Arch, CpuState, x64::{GpReg, X64Arch}}, encoding::dataflows::{AccessKind, AddressComputation, Dest, Inputs, MemoryAccess, MemoryAccesses, Size, Source}, oracle::{Oracle, OracleError}, state::{Addr, Permissions, SystemState, random::{RandomizationError, StateGen}}};
+use liblisa::Instruction;
+use liblisa::arch::{Arch, CpuState, x64::{GpReg, X64Arch}};
+use liblisa::encoding::dataflows::{AccessKind, AddressComputation, Dest, Inputs, MemoryAccess, MemoryAccesses, Size, Source};
+use liblisa::oracle::{Oracle, OracleError};
+use liblisa::state::{Addr, Page, Permissions, SystemState, random::{RandomizationError, StateGen}};
 use liblisa_enc::AccessAnalysisError;
 
 use crate::state_diff::{self, Difference, DifferenceType};
@@ -25,11 +29,6 @@ fn try_add_memory_mapping(state: &mut SystemState<X64Arch>, addr: Addr) -> bool 
 }
 
 fn try_report_diff(diff: DifferenceType, before: &SystemState<X64Arch>, state: &mut DiffThreadState) -> bool {
-    // if diff has already been reported, do not report again
-    if state.diffs.iter().any(|d| d.diff_type.contains(&diff)) {
-        return false;
-    }
-    
     // if diff relates to Ghidra's custom pcode op, do not report it
     if let DifferenceType::ErrOk(e) = &diff {
         if is_ghidra_pcode_error(e) {
@@ -41,6 +40,30 @@ fn try_report_diff(diff: DifferenceType, before: &SystemState<X64Arch>, state: &
             return false;
         }
     }
+
+    if let DifferenceType::ErrErr(e1, e2) = &diff {
+        match (e1, e2) {
+            (OracleError::MemoryAccess(addr1), OracleError::MemoryAccess(addr2)) => {
+                if addr1.distance_between(*addr2) <= 16 {
+                    // if the two memory accesses are close to each other, do not report it
+                    // might happen because Ghidra optimizes loads, while CPU loads larger block
+                    return false;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // if diff has already been reported, do not report again
+    if state.diffs.iter().any(|d| d.diff_type.contains(&diff)) {
+        return false;
+    }
+
+    println!("Found diff: {}, adding to existing list:", diff);
+    for d in &state.diffs {
+        println!("  {:?}", d.diff_type);
+    }
+    println!("  {:?}", before);
 
     // seems good, delete smaller existing diffs and report this one
     state.diffs.retain(|d| !diff.contains(&d.diff_type));
@@ -74,6 +97,22 @@ fn run_instr_single(
     loop {
         let r1 = state.o1.observe(&before);
         let r2 = state.o2.observe(&before);
+
+        // special case: if Ghidra is fine, but CPU had MemoryAccess error, *and* the address
+        // is directly next to an existing mapping, it's probably because Ghidra optimizes loads,
+        // while the CPU loads larger blocks => map the additional page and try again
+        if let (Ok(_), Err(OracleError::MemoryAccess(addr))) = (&r1, &r2) {
+            let next_to_mapped = before.memory().iter().any(|(mapped_addr, _, data)| {
+                let page: Page<X64Arch> = mapped_addr.page();
+                addr.distance_between(page.start_addr()) <= 16 || addr.distance_between(page.last_address_of_page()) <= 16
+            });
+            if next_to_mapped {
+                if !try_add_memory_mapping(&mut before, *addr) {
+                    before = state_gen.randomize_new(&mut state.rng)?;
+                }
+                continue;
+            }
+        }
 
         let result = state_diff::compare(&r1, &r2);
         if let Some(result) = result {

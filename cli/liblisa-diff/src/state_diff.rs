@@ -4,6 +4,7 @@ use liblisa::oracle::OracleError;
 use liblisa::state::{Addr, SystemState};
 use liblisa::value::Value;
 use serde::{Deserialize, Serialize};
+use std::fmt::Display;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Difference {
@@ -30,6 +31,28 @@ pub enum OkMismatch {
     XmmDazMismatch(u8, u8),
     // Mem State
     MemoryMismatch(Addr, Vec<u8>, Vec<u8>),
+}
+
+impl Display for DifferenceType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DifferenceType::OkOk(mismatches) => {
+                write!(f,
+                    "OkOk with {} mismatches, including [{}]",
+                    mismatches.len(), mismatches.iter().take(5).map(|m| format!("{:?}", m)).collect::<Vec<_>>().join(", ")
+                )
+            }
+            DifferenceType::OkErr(e) => {
+                write!(f, "OkErr with error in VM: \"{}\"", e)
+            }
+            DifferenceType::ErrOk(e) => {
+                write!(f, "ErrOk with error in Ghidra: \"{}\"", e)
+            }
+            DifferenceType::ErrErr(e1, e2) => {
+                write!(f, "ErrErr with errors: \"{}\" (Ghidra) and \"{}\" (VM)", e1, e2)
+            }
+        }
+    }
 }
 
 impl DifferenceType {

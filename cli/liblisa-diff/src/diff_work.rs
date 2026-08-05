@@ -101,7 +101,7 @@ impl<A: Arch> Work<A, ()> for Diff
     }
 
     fn run<O: Oracle<A>>(oracle: &mut O, _cache: &(), request: &Self::Request) -> Self::Result {
-        println!("Diffing {}", request.todo.description);
+        println!("Diffing [{}] {}", request.encoding_index, request.todo.description);
         let result = request.diff(oracle, &mut rand::thread_rng());
         DiffResult { diffs: result }
     }
