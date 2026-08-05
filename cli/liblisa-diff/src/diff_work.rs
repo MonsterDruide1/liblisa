@@ -138,11 +138,16 @@ impl<A: Arch> Work<A, ()> for Diff<A>
         let ms_taken = request.at.elapsed().as_millis();
         self.total_ms += ms_taken;
 
+        let result_type = match &result.diffs {
+            Ok(diffs) => format!("{} diffs", diffs.len()),
+            Err(e) => format!("Error: {}", e),
+        };
         println!(
-            "Received result for {:X} index={} in {}s:",
+            "Received result for {:X} index={} in {}s: {}",
             request.encoding.instr(),
             request.encoding_index,
-            request.at.elapsed().as_secs()
+            request.at.elapsed().as_secs(),
+            result_type,
         );
 
         self.results.push((request.encoding_index, result.clone()));
