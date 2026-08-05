@@ -1,13 +1,16 @@
+use rand_xoshiro::Xoshiro256PlusPlus;
+
 use liblisa::Instruction;
 use liblisa::arch::{Arch, CpuState, x64::{GpReg, X64Arch}};
 use liblisa::encoding::dataflows::{AccessKind, AddressComputation, Dest, Inputs, MemoryAccess, MemoryAccesses, Size, Source};
 use liblisa::oracle::{Oracle, OracleError};
-use liblisa::state::{Addr, Page, Permissions, SystemState, random::{RandomizationError, StateGen}};
+use liblisa::state::{Addr, Page, Permissions, SystemState, random::{RandomizationError, StateGen, randomized_bytes}};
 use liblisa_enc::AccessAnalysisError;
 
 use crate::state_diff::{self, Difference, DifferenceType};
 use crate::diff_types::DiffThreadState;
 
+const MAX_MEMORY_ACCESS_OFFSET: u64 = 32;
 
 fn is_ghidra_pcode_error(e: &OracleError) -> bool {
     match e {
@@ -16,14 +19,23 @@ fn is_ghidra_pcode_error(e: &OracleError) -> bool {
     }
 }
 
-fn try_add_memory_mapping(state: &mut SystemState<X64Arch>, addr: Addr) -> bool {
+fn try_add_memory_mapping(state: &mut SystemState<X64Arch>, addr: Addr, rng: &mut Xoshiro256PlusPlus) -> bool {
     if addr.page::<X64Arch>() == Addr::new(CpuState::<X64Arch>::gpreg(state.cpu(), GpReg::Rip)).page() {
         // cannot be mapped to the same page => start over with new state
         return false;
     }
     let mem = state.memory_mut();
     let mut memory = std::mem::take(&mut mem.data).into_vec();
-    memory.push((addr, Permissions::ReadWrite, vec![0u8; 1]));
+
+    let addr_minus = addr.as_u64().saturating_sub(MAX_MEMORY_ACCESS_OFFSET);
+    let start = addr_minus.max(addr.page::<X64Arch>().start_addr().as_u64());
+    let addr = Addr::new(start);
+
+    let addr_plus = addr.as_u64().saturating_add(MAX_MEMORY_ACCESS_OFFSET);
+    let end = addr_plus.min(addr.page::<X64Arch>().last_address_of_page().as_u64());
+    let size = end.checked_sub(start).unwrap();
+
+    memory.push((addr, Permissions::ReadWrite, randomized_bytes(rng, size as usize)));
     mem.data = memory.into_boxed_slice();
     true
 }
@@ -44,7 +56,7 @@ fn try_report_diff(diff: DifferenceType, before: &SystemState<X64Arch>, state: &
     if let DifferenceType::ErrErr(e1, e2) = &diff {
         match (e1, e2) {
             (OracleError::MemoryAccess(addr1), OracleError::MemoryAccess(addr2)) => {
-                if addr1.distance_between(*addr2) <= 16 {
+                if addr1.distance_between(*addr2) <= MAX_MEMORY_ACCESS_OFFSET {
                     // if the two memory accesses are close to each other, do not report it
                     // might happen because Ghidra optimizes loads, while CPU loads larger block
                     return false;
@@ -104,10 +116,10 @@ fn run_instr_single(
         if let (Ok(_), Err(OracleError::MemoryAccess(addr))) = (&r1, &r2) {
             let next_to_mapped = before.memory().iter().any(|(mapped_addr, _, data)| {
                 let page: Page<X64Arch> = mapped_addr.page();
-                addr.distance_between(page.start_addr()) <= 16 || addr.distance_between(page.last_address_of_page()) <= 16
+                addr.distance_between(page.start_addr()) <= MAX_MEMORY_ACCESS_OFFSET || addr.distance_between(page.last_address_of_page()) <= MAX_MEMORY_ACCESS_OFFSET
             });
             if next_to_mapped {
-                if !try_add_memory_mapping(&mut before, *addr) {
+                if !try_add_memory_mapping(&mut before, *addr, &mut state.rng) {
                     before = state_gen.randomize_new(&mut state.rng)?;
                 }
                 continue;
@@ -122,13 +134,13 @@ fn run_instr_single(
         // if page fault occurred, try adding mapping and try again
         // if mapping cannot be added, randomize new state and try again
         if let Err(OracleError::MemoryAccess(addr)) = r1 {
-            if !try_add_memory_mapping(&mut before, addr) {
+            if !try_add_memory_mapping(&mut before, addr, &mut state.rng) {
                 before = state_gen.randomize_new(&mut state.rng)?;
             }
             continue;
         }
         else if let Err(OracleError::MemoryAccess(addr)) = r2 {
-            if !try_add_memory_mapping(&mut before, addr) {
+            if !try_add_memory_mapping(&mut before, addr, &mut state.rng) {
                 before = state_gen.randomize_new(&mut state.rng)?;
             }
             continue;
