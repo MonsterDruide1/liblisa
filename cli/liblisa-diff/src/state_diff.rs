@@ -1,5 +1,5 @@
-use liblisa::arch::{Arch, CpuState};
-use liblisa::arch::x64::{GpReg, X64Arch, X87, Xmm};
+use liblisa::arch::{Arch, CpuState, Register};
+use liblisa::arch::x64::{GpReg, X64Arch, X64Flag, X87, Xmm};
 use liblisa::oracle::OracleError;
 use liblisa::state::{Addr, SystemState};
 use serde::{Deserialize, Serialize};
@@ -22,6 +22,7 @@ pub enum DifferenceType {
 pub enum OkMismatch {
     // CPU State
     RegMismatch(GpReg, u64, u64),
+    FlagsMismatch(X64Flag, bool, bool),
     XmmMismatch(Xmm, Xmm),
     X87Mismatch(X87, X87),
     XmmExceptionFlagsMismatch(u64, u64),
@@ -49,10 +50,20 @@ pub fn compare(r1: &Result<SystemState<X64Arch>, OracleError>, r2: &Result<Syste
         (Ok(r1), Ok(r2)) => {
             let mut mismatches = Vec::new();
             for reg in X64Arch::iter_gpregs() {
+                if reg.is_flags() {
+                    continue;
+                }
                 let v1 = CpuState::<X64Arch>::gpreg(r1.cpu(), reg);
                 let v2 = CpuState::<X64Arch>::gpreg(r2.cpu(), reg);
                 if v1 != v2 {
                     mismatches.push(OkMismatch::RegMismatch(reg, v1, v2));
+                }
+            }
+            for flag in X64Arch::flagreg_to_flags(X64Arch::reg(GpReg::RFlags), 0, 8) {
+                let v1 = CpuState::<X64Arch>::flag(r1.cpu(), *flag);
+                let v2 = CpuState::<X64Arch>::flag(r2.cpu(), *flag);
+                if v1 != v2 {
+                    mismatches.push(OkMismatch::FlagsMismatch(*flag, v1, v2));
                 }
             }
             if r1.cpu().xmm != r2.cpu().xmm {
