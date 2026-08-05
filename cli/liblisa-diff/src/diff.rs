@@ -12,6 +12,7 @@ use crate::state_diff::{self, Difference, DifferenceType};
 use crate::diff_types::DiffThreadState;
 
 const MAX_MEMORY_ACCESS_OFFSET: u64 = 32;
+const MAX_DIFFS_TO_KEEP: usize = 123;
 
 fn is_ghidra_pcode_error(e: &OracleError) -> bool {
     match e {
@@ -77,6 +78,11 @@ fn try_report_diff(diff: DifferenceType, before: &SystemState<X64Arch>, state: &
         debug!("  {:?}", d.diff_type);
     }
     debug!("  {:?}", before);
+
+    if state.diffs.len() > MAX_DIFFS_TO_KEEP {
+        debug!("  ... (truncated, {} diffs total)", state.diffs.len());
+        return true;
+    }
 
     // seems good, delete smaller existing diffs and report this one
     state.diffs.retain(|d| !diff.contains(&d.diff_type));
