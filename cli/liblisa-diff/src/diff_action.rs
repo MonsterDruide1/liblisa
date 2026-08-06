@@ -1,6 +1,6 @@
 use std::{error::Error, fs::{self, File}, io::BufReader, path::PathBuf, sync::{Mutex, atomic::{AtomicBool, Ordering}, mpsc::{RecvTimeoutError, channel}}, thread::{scope, spawn}, time::{Duration, Instant}};
 
-use liblisa::{Instruction, arch::x64::X64Arch};
+use liblisa::{Instruction, arch::x64::X64Arch, oracle::Oracle};
 use liblisa::encoding::Encoding;
 use liblisa::semantics::default::computation::SynthesizedComputation;
 use liblisa_libcli::{clear_screen, threadpool::ThreadPool};
@@ -40,8 +40,9 @@ enum Verb {
     Dump {
         result: ResultType,
     },
-    Test {
-        instr: Instruction,
+    TestDiff {
+        todo_index: usize,
+        diff_index: usize,
     },
 }
 
@@ -219,8 +220,8 @@ impl DiffCommand {
                         Ok(diffs) if !diffs.is_empty() && *r == ResultType::Mismatch => {
                             println!("Index {index}: {}", diff.todos[*index].description);
                             println!("  Result: MISMATCH");
-                            for diff in diffs {
-                                println!("    Diff: {:?}", diff);
+                            for (i, diff) in diffs.iter().enumerate() {
+                                println!("    Diff[{}-{}]: {:?}", index, i, diff);
                             }
                         },
                         Err(e) if *r == ResultType::Failure => {
@@ -232,11 +233,37 @@ impl DiffCommand {
                     }
                 }
             }
-            Verb::Test { instr} => {
+            Verb::TestDiff { todo_index, diff_index } => {
+                println!("Loading base data...");
+                let file = File::open(self.state_path()).unwrap();
+                let diff: Diff = serde_json::from_reader(file).unwrap();
+
+                let todo = &diff.todos[*todo_index];
+                let result = &diff.results.iter().find(|(i,_)| i == todo_index).unwrap().1;
+
+                println!("Testing todo index {todo_index}, diff index {diff_index}: {}", todo.description);
+                let diffs = match &result.diffs {
+                    Ok(diffs) => diffs,
+                    Err(e) => {
+                        println!("  Result: FAILURE");
+                        println!("    Error: {}", e);
+                        println!("  Cannot test diff, no state to run!");
+                        return;
+                    }
+                };
+                let diff = diffs.get(*diff_index).unwrap_or_else(|| {
+                    panic!("Diff index {diff_index} is out of bounds for todo index {todo_index} ({} diffs)", diffs.len());
+                });
+                
                 let mut state = create_state();
                 println!("Running instruction...");
-                println!("{:?}", run_instr(instr, NUM_STATES_PER_INSTR, &mut state));
-                println!("Observed diffs: {:?}", state.diffs);
+                let r1 = state.o1.observe(&diff.example_before);
+                let r2 = state.o2.observe(&diff.example_before);
+
+                println!("  Ghidra result: {:?}", r1);
+                println!("  VM result: {:?}", r2);
+                println!("  Recorded diff: {:?}", diff.diff_type);
+                println!("  New diffs: {:?}", state.diffs.iter().map(|diff| &diff.diff_type).collect::<Vec<_>>());
             }
         }
     }
