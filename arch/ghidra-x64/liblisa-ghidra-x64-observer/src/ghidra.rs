@@ -179,6 +179,7 @@ impl GhidraObserver {
                 bind::ExceptionType_ComputationError => return Err(OracleError::ComputationError),
                 bind::ExceptionType_GeneralProtectionFault => return Err(OracleError::GeneralFault),
                 bind::ExceptionType_CustomPcodeOpCalled => return Err(OracleError::ApiError("Ghidra emulator called a custom pcode op".to_string())),
+                bind::ExceptionType_VarnodeTooLarge => return Err(OracleError::ApiError("Ghidra emulator reported varnode too large".to_string())),
                 exception => unreachable!("Ghidra emulator threw unexpected exception: {:?}", exception),
             }
             let new_state = *observation_result.after;
@@ -200,6 +201,7 @@ impl GhidraObserver {
                 bind::ExceptionType_ComputationError => return Err(OracleError::ComputationError),
                 bind::ExceptionType_GeneralProtectionFault => return Err(OracleError::GeneralFault),
                 bind::ExceptionType_CustomPcodeOpCalled => return Err(OracleError::ApiError("Ghidra emulator called a custom pcode op".to_string())),
+                bind::ExceptionType_VarnodeTooLarge => return Err(OracleError::ApiError("Ghidra emulator reported varnode too large".to_string())),
                 exception => unreachable!("Ghidra emulator threw unexpected exception during memory access scan: {:?}", exception),
             }
             let accesses = *scan_result.accesses;
