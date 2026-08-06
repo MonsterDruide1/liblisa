@@ -66,6 +66,10 @@ pub enum DiffError {
     InstructionKeepsFaulting,
     #[error("invalid instruction on both systems")]
     InvalidInstruction,
+    #[error("Ghidra requires custom Pcode op")]
+    GhidraCustomPcodeOp,
+    #[error("Ghidra attempted to use a varnode that is too large")]
+    GhidraVarnodeTooLarge,
 }
 
 impl From<RandomizationError> for DiffError {

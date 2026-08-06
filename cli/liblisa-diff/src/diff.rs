@@ -17,10 +17,16 @@ use crate::diff_types::{DiffError, DiffThreadState};
 const MAX_MEMORY_ACCESS_OFFSET: u64 = 32;
 const MAX_DIFFS_TO_KEEP: usize = 123;
 
-fn is_ghidra_pcode_error(e: &OracleError) -> bool {
-    match e {
-        OracleError::ApiError(e) => e.contains("Ghidra emulator called a custom pcode op"),
-        _ => false,
+fn translate_ghidra_error(e: &OracleError) -> Option<DiffError> {
+    let OracleError::ApiError(e) = e else {
+        return None;
+    };
+    if e.contains("Ghidra emulator called a custom pcode op") {
+        Some(DiffError::GhidraCustomPcodeOp)
+    } else if e.contains("Ghidra emulator reported varnode too large") {
+        Some(DiffError::GhidraVarnodeTooLarge)
+    } else {
+        None
     }
 }
 
@@ -46,18 +52,6 @@ fn try_add_memory_mapping(state: &mut SystemState<X64Arch>, addr: Addr, rng: &mu
 }
 
 fn try_report_diff(diff: DifferenceType, before: &SystemState<X64Arch>, state: &mut DiffThreadState) -> bool {
-    // if diff relates to Ghidra's custom pcode op, do not report it
-    if let DifferenceType::ErrOk(e) = &diff {
-        if is_ghidra_pcode_error(e) {
-            return false;
-        }
-    }
-    if let DifferenceType::ErrErr(e, _) = &diff {
-        if is_ghidra_pcode_error(e) {
-            return false;
-        }
-    }
-
     if let DifferenceType::ErrErr(e1, e2) = &diff {
         match (e1, e2) {
             (OracleError::MemoryAccess(addr1), OracleError::MemoryAccess(addr2)) => {
@@ -120,11 +114,19 @@ fn run_instr_single(
         let r1 = state.o1.observe(&before);
         let r2 = state.o2.observe(&before);
 
+        // special case: Ghidra might throw custom errors indicating that emulation doesn't behave properly
+        // => translate to `DiffError` and abort early
+        if let Err(e) = &r1 {
+            if let Some(diff_error) = translate_ghidra_error(e) {
+                return Err(diff_error);
+            }
+        }
+
         // special case: if Ghidra is fine, but CPU had MemoryAccess error, *and* the address
         // is directly next to an existing mapping, it's probably because Ghidra optimizes loads,
         // while the CPU loads larger blocks => map the additional page and try again
         if let (Ok(_), Err(OracleError::MemoryAccess(addr))) = (&r1, &r2) {
-            let next_to_mapped = before.memory().iter().any(|(mapped_addr, _, data)| {
+            let next_to_mapped = before.memory().iter().any(|(mapped_addr, _, _)| {
                 let page: Page<X64Arch> = mapped_addr.page();
                 addr.distance_between(page.start_addr()) <= MAX_MEMORY_ACCESS_OFFSET || addr.distance_between(page.last_address_of_page()) <= MAX_MEMORY_ACCESS_OFFSET
             });
@@ -176,10 +178,7 @@ fn run_instr_single(
                 return Err(DiffError::InvalidInstruction);
             }
 
-            return Ok(
-                (r1.is_ok() || r1.is_err_and(|e| is_ghidra_pcode_error(&e)))
-                && (r2.is_ok() || r2.is_err_and(|e| is_ghidra_pcode_error(&e)))
-            );
+            return Ok(r1.is_ok() && r2.is_ok())
         }
     }
 }
