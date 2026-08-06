@@ -896,6 +896,7 @@ dependencies = [
  "serde_json",
  "test-log",
  "thiserror",
+ "xed-sys 0.6.0+xed-2024.05.20",
 ]
 
 [[package]]
@@ -1460,7 +1461,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f65dd82d2f8c7963036b95b2e86aa4509ebbfcd688aee3d590230acce086b83"
 dependencies = [
  "const_panic",
- "xed-sys",
+ "xed-sys 0.5.1+xed-2023.12.19",
 ]
 
 [[package]]
@@ -1668,6 +1669,12 @@ name = "target-lexicon"
 version = "0.12.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "61c41af27dd6d1e27b1b16b489db798443478cef1f06a660c96db617ba5de3b1"
+
+[[package]]
+name = "target-lexicon"
+version = "0.13.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "adb6935a6f5c20170eeceb1a3835a49e12e19d792f6dd344ccc76a985ca5a6ca"
 
 [[package]]
 name = "tempfile"
@@ -2093,7 +2100,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9dd736f903f94536c9f256199917c43fc56f872359c836ea0f7b0a818f02f40"
 dependencies = [
  "cc",
- "target-lexicon",
+ "target-lexicon 0.12.16",
+]
+
+[[package]]
+name = "xed-sys"
+version = "0.6.0+xed-2024.05.20"
+source = "git+https://github.com/MonsterDruide1/xed-sys.git#01824d2b04e93eac45dd38ac24970c1ecf8a61d2"
+dependencies = [
+ "cc",
+ "target-lexicon 0.13.5",
 ]
 
 [[package]]

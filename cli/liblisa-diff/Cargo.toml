@@ -27,6 +27,7 @@ rand = "0.8"
 rand_xoshiro = "0.6"
 nix = { version = "0.27.1", features = ["process", "ptrace", "signal", "sched"] }
 thiserror = "1"
+xed-sys = { git = "https://github.com/MonsterDruide1/xed-sys.git" }
 
 [dev-dependencies]
 test-log = "0.2.10"
