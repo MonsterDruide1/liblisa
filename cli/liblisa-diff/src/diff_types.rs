@@ -63,10 +63,10 @@ pub enum DiffError {
     // should not happen => results need to be checked for reason:
     #[error("??? instruction keeps faulting ???")]
     InstructionKeepsFaulting,
+    #[error("??? unaligned access keeps faulting ???")]
+    UnalignedAccessKeepsFaulting,
 
     // cannot be handled, abort diffing and report to user:
-    #[error("unaligned access keeps faulting")]
-    UnalignedAccessKeepsFaulting,
     #[error("randomization error: {0}")]
     RandomizationError(RandomizationError),
     #[error("invalid instruction on Ghidra={0} or VM={1}")]

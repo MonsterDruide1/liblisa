@@ -84,14 +84,14 @@ impl PartialEq for OkMismatch {
             (FlagsMismatch(f1, _, _), FlagsMismatch(f2, _, _)) => f1 == f2,
             (XmmMismatch(r1, _, _), XmmMismatch(r2, _, _)) => r1 == r2,
             (X87RegMismatch(r1, _, _), X87RegMismatch(r2, _, _)) => r1 == r2,
+            (X87TagWordMismatch(_, _), X87TagWordMismatch(_, _)) => true,
+            (X87TopOfStackMismatch(_, _), X87TopOfStackMismatch(_, _)) => true,
 
             // standard cases: consider everything about mismatch
             (XmmExceptionFlagsMismatch(f1, f2), XmmExceptionFlagsMismatch(g1, g2)) => f1 == g1 && f2 == g2,
             (XmmDazMismatch(d1, d2), XmmDazMismatch(e1, e2)) => d1 == e1 && d2 == e2,
-            (X87TopOfStackMismatch(t1, t2), X87TopOfStackMismatch(u1, u2)) => t1 == u1 && t2 == u2,
             (X87ExceptionFlagsMismatch(e1, e2), X87ExceptionFlagsMismatch(f1, f2)) => e1 == f1 && e2 == f2,
             (X87ConditionCodesMismatch(c1, c2), X87ConditionCodesMismatch(d1, d2)) => c1 == d1 && c2 == d2,
-            (X87TagWordMismatch(t1, t2), X87TagWordMismatch(u1, u2)) => t1 == u1 && t2 == u2,
             // all other combinations are not equal
             _ => false,
         }

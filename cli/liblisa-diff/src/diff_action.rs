@@ -259,7 +259,7 @@ impl DiffCommand {
                         _ => true,
                     };
                     if !retain {
-                        println!("Discarding result for {}: {:?}", description, r);
+                        println!("Discarding result for {}", description);
                         *r = None;
                     }
                 }
@@ -294,6 +294,7 @@ impl DiffCommand {
                 });
                 
                 let mut state = create_state();
+                println!("Before: {:?}", diff.example_before);
                 println!("Running instruction...");
                 let r1 = state.o1.observe(&diff.example_before);
                 let r2 = state.o2.observe(&diff.example_before);
