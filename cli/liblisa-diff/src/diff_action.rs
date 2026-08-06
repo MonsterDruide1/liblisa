@@ -5,8 +5,10 @@ use liblisa::encoding::Encoding;
 use liblisa::semantics::default::computation::SynthesizedComputation;
 use liblisa_libcli::{clear_screen, threadpool::ThreadPool};
 
-use crate::{diff::{create_state, run_instr}, diff_types::NUM_STATES_PER_INSTR, dummy_oracle_source};
-use crate::diff_types::{Diff, DiffError, DiffResult, DiffRuntimeData};
+use crate::diff::{create_state, run_instr};
+use crate::diff_types::{Diff, DiffError, DiffResult, DiffRuntimeData, NUM_STATES_PER_INSTR};
+use crate::state_diff;
+use crate::dummy_oracle_source;
 
 #[derive(Clone, Debug, PartialEq, clap::ValueEnum)]
 enum ResultType {
@@ -259,11 +261,12 @@ impl DiffCommand {
                 println!("Running instruction...");
                 let r1 = state.o1.observe(&diff.example_before);
                 let r2 = state.o2.observe(&diff.example_before);
+                let diffs = state_diff::compare(&r1, &r2);
 
                 println!("  Ghidra result: {:?}", r1);
                 println!("  VM result: {:?}", r2);
                 println!("  Recorded diff: {:?}", diff.diff_type);
-                println!("  New diffs: {:?}", state.diffs.iter().map(|diff| &diff.diff_type).collect::<Vec<_>>());
+                println!("  New diffs: {:?}", diffs);
             }
         }
     }
