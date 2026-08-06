@@ -69,8 +69,8 @@ pub enum DiffError {
     UnalignedAccessKeepsFaulting,
     #[error("randomization error: {0}")]
     RandomizationError(RandomizationError),
-    #[error("invalid instruction on both systems")]
-    InvalidInstruction,
+    #[error("invalid instruction on Ghidra={0} or VM={1}")]
+    InvalidInstruction(bool, bool),
     #[error("Ghidra requires custom Pcode op")]
     GhidraCustomPcodeOp,
     #[error("Ghidra attempted to use a varnode that is too large")]

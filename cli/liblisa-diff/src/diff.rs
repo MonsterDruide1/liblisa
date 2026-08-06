@@ -14,8 +14,6 @@ use crate::dummy_oracle_source::DoubleCheckedMappableArea;
 use crate::state_diff::{self, Difference, DifferenceType};
 use crate::diff_types::{DiffError, DiffThreadState};
 
-use std::fs::File;
-
 const MAX_MEMORY_ACCESS_OFFSET: u64 = 32;
 const MAX_DIFFS_TO_KEEP: usize = 123;
 const UNALIGNED_ACCESS_MAX_RETRIES: usize = 10;
@@ -120,6 +118,14 @@ fn run_instr_single(
         let mut r1 = state.o1.observe(&before);
         let mut r2 = state.o2.observe(&before);
 
+        // if any of them complain about invalid instruction, abort immediately
+        let invalid1 = r1.as_ref().is_err_and(|e| *e == OracleError::InvalidInstruction);
+        let invalid2 = r2.as_ref().is_err_and(|e| *e == OracleError::InvalidInstruction);
+        if invalid1 || invalid2 {
+            debug!("Instruction is invalid on Ghidra={invalid1} or VM={invalid2}, aborting: {:?}", instr);
+            return Err(DiffError::InvalidInstruction(invalid1, invalid2));
+        }
+
         // special case: Ghidra might throw custom errors indicating that emulation doesn't behave properly
         // => translate to `DiffError` and abort early
         if let Err(e) = &r1 {
@@ -209,11 +215,10 @@ fn run_instr_single(
         if r1.is_ok() && r2.is_ok() {
             // scan memory accesses and add new mappings for any that are not already mapped
             // might happen if accesses go to already-mapped page, but outside mapped range
-            let mut need_more_mappings = true;
             let mut any_new_mappings = false;
             let mut restart = false;
             loop {
-                need_more_mappings = false;
+                let mut need_more_mappings = false;
                 
                 let addrs = if MEM_ACCESS_SCAN_GHIDRA_ONLY {
                     state.o1.scan_memory_accesses(&before).expect("scan_memory_accesses should not fail if observe succeeded")
@@ -270,11 +275,6 @@ fn run_instr_single(
         trace!("Instruction executed on both oracles without page fault: {:?}", instr);
         trace!("  Ghidra result: {:?}", r1);
         trace!("  VM result: {:?}", r2);
-
-        // if both agree that the instruction is invalid, throw harder error to abort early
-        if let (Err(OracleError::InvalidInstruction), Err(OracleError::InvalidInstruction)) = (&r1, &r2) {
-            return Err(DiffError::InvalidInstruction);
-        }
 
         return Ok(r1.is_ok() && r2.is_ok())
     }
