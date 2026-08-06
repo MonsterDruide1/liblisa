@@ -42,6 +42,9 @@ enum Verb {
     Dump {
         result: ResultType,
     },
+    DiscardResults {
+        result: ResultType,
+    },
     TestDiff {
         todo_index: usize,
         diff_index: usize,
@@ -114,7 +117,7 @@ impl DiffCommand {
                         while running.load(Ordering::SeqCst) {
                             std::thread::sleep(Duration::from_secs(5));
 
-                            if last_save.elapsed() >= Duration::from_secs(30) {
+                            if last_save.elapsed() >= Duration::from_secs(10) {
                                 self.save_state(&synthesis.lock().unwrap().0);
                                 last_save = Instant::now();
                             }
@@ -234,6 +237,27 @@ impl DiffCommand {
                         _ => {},
                     }
                 }
+            }
+            Verb::DiscardResults { result } => {
+                println!("Loading base data...");
+                let file = File::open(self.state_path()).unwrap();
+                let mut diff: Diff = serde_json::from_reader(file).unwrap();
+
+                diff.results.retain(|(index, DiffResult { diffs: r })| {
+                    let retain = match r {
+                        Ok(diffs) if diffs.is_empty() && *result == ResultType::OK => false,
+                        Ok(diffs) if !diffs.is_empty() && *result == ResultType::Mismatch => false,
+                        Err(e) if *result == ResultType::Failure => false,
+                        _ => true,
+                    };
+                    if !retain {
+                        diff.remaining_entries.push(*index);
+                    }
+                    retain
+                });
+
+                let file = File::create(self.state_path()).unwrap();
+                serde_json::to_writer(file, &diff).unwrap();
             }
             Verb::TestDiff { todo_index, diff_index } => {
                 println!("Loading base data...");
