@@ -1,4 +1,3 @@
-use std::fmt;
 use std::time::Instant;
 
 use liblisa::arch::{Arch, x64::X64Arch};
@@ -24,7 +23,7 @@ impl DiffRequest {
         };
         let mut state = &mut oracle.state;
 
-        for instr in &self.todo.instructions {
+        for instr in &self.item.instructions {
             run_instr(instr, NUM_STATES_PER_INSTR, &mut state)?;
         }
         let diffs = std::mem::take(&mut state.diffs);
@@ -46,17 +45,17 @@ impl<A: Arch> Work<A, ()> for Diff
     type Artifact = DiffArtifact;
 
     fn next(&mut self, data: &mut Self::RuntimeData) -> Option<Self::Request> {
-        let next_entry = self.remaining_entries.iter().find(|e| !data.pending.contains(e));
+        let next_entry = data.todo.iter().find(|e| !data.pending.contains(e));
 
-        next_entry.and_then(|&encoding_index| {
-            self.todos.get(encoding_index).cloned().map(|todo| {
+        next_entry.and_then(|&item_index| {
+            self.items.get(item_index).cloned().map(|item| {
                 let request = DiffRequest {
                     at: Instant::now(),
-                    encoding_index,
-                    todo,
+                    item_index,
+                    item,
                 };
 
-                data.pending.push(encoding_index);
+                data.pending.push(item_index);
 
                 request
             })
@@ -79,17 +78,17 @@ impl<A: Arch> Work<A, ()> for Diff
         };
         println!(
             "Received result for {} index={} in {}s: {}",
-            request.todo.description,
-            request.encoding_index,
+            request.item.description,
+            request.item_index,
             request.at.elapsed().as_secs(),
             result_type,
         );
 
-        self.results.push((request.encoding_index, result.clone()));
-        self.remaining_entries.remove(
-            self.remaining_entries
+        self.items[request.item_index].result = Some(result.clone());
+        data.todo.remove(
+            data.todo
                 .iter()
-                .position(|&item| item == request.encoding_index)
+                .position(|&item| item == request.item_index)
                 .unwrap(),
         );
 
@@ -100,7 +99,7 @@ impl<A: Arch> Work<A, ()> for Diff
     }
 
     fn run<O: Oracle<A>>(oracle: &mut O, _cache: &(), request: &Self::Request) -> Self::Result {
-        println!("Diffing [{}] {}", request.encoding_index, request.todo.description);
+        println!("Diffing [{}] {}", request.item_index, request.item.description);
         let result = request.diff(oracle, &mut rand::thread_rng());
         DiffResult { diffs: result }
     }
@@ -108,7 +107,7 @@ impl<A: Arch> Work<A, ()> for Diff
 
 impl Diff {
     pub fn create(encodings: Vec<Encoding<X64Arch, SynthesizedComputation>>) -> Self {
-        let todos: Vec<DiffTodoItem> = encodings.iter().enumerate().map(|(i, encoding)| {
+        let items: Vec<DiffItem> = encodings.iter().enumerate().map(|(i, encoding)| {
             if i % 100 == 0 {
                 println!("Preparing diff for encoding {}: {}", i, encoding);
             }
@@ -122,25 +121,22 @@ impl Diff {
 
             // if smaller than threshold, run with all instructions,
             //   otherwise run with a random sample of instructions
-            let mut instrs = if use_all {
+            let instrs = if use_all {
                 encoding.iter_instrs(&[None; 10000], true).collect::<Vec<_>>()
             } else {
                 encoding.random_instrs(&[None; 10000], &mut rand::thread_rng()).take(NUM_INSTRS_PER_ENCODING).collect::<Vec<_>>()
             };
-            DiffTodoItem {
+            DiffItem {
                 instructions: instrs,
                 description: format!("{}", encoding),
+                result: None,
             }
         }).collect();
-
-        let remaining_entries = (0..todos.len()).collect();
 
         Diff {
             runtime_ms: 0,
             total_ms: 0,
-            todos,
-            remaining_entries,
-            results: Vec::new(),
+            items,
         }
     }
 }

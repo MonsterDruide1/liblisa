@@ -18,9 +18,10 @@ pub const NUM_INSTRS_PER_ENCODING: usize = 100;
 pub const NUM_STATES_PER_INSTR: usize = 250;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct DiffTodoItem {
+pub struct DiffItem {
     pub instructions: Vec<Instruction>,
     pub description: String,
+    pub result: Option<DiffResult>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -28,21 +29,20 @@ pub struct Diff {
     #[serde(default)]
     pub runtime_ms: u128,
     pub total_ms: u128,
-    pub todos: Vec<DiffTodoItem>,
-    pub remaining_entries: Vec<usize>,
-    pub results: Vec<(usize, DiffResult)>,
+    pub items: Vec<DiffItem>,
 }
 
 pub struct DiffRuntimeData {
     pub last_check: Instant,
+    pub todo: Vec<usize>,
     pub pending: Vec<usize>,
 }
 
 #[derive(Clone, Debug)]
 pub struct DiffRequest {
     pub at: Instant,
-    pub encoding_index: usize,
-    pub todo: DiffTodoItem,
+    pub item_index: usize,
+    pub item: DiffItem,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

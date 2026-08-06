@@ -1,12 +1,12 @@
 use std::{error::Error, fs::{self, File}, io::BufReader, path::PathBuf, sync::{Mutex, atomic::{AtomicBool, Ordering}, mpsc::{RecvTimeoutError, channel}}, thread::{scope, spawn}, time::{Duration, Instant}};
 
-use liblisa::{Instruction, arch::x64::X64Arch, oracle::Oracle};
+use liblisa::{arch::x64::X64Arch, oracle::Oracle};
 use liblisa::encoding::Encoding;
 use liblisa::semantics::default::computation::SynthesizedComputation;
 use liblisa_libcli::{clear_screen, threadpool::ThreadPool};
 
-use crate::diff::{create_state, run_instr};
-use crate::diff_types::{Diff, DiffError, DiffResult, DiffRuntimeData, NUM_STATES_PER_INSTR};
+use crate::{diff::create_state, diff_types::DiffItem};
+use crate::diff_types::{Diff, DiffError, DiffRuntimeData};
 use crate::state_diff;
 use crate::dummy_oracle_source;
 
@@ -90,13 +90,15 @@ impl DiffCommand {
             Verb::Run { threads, ramp_up } => {
                 println!("Loading base data...");
                 let file = File::open(self.state_path()).unwrap();
-                let synthesis: Diff = serde_json::from_reader(file).unwrap();
-                let synthesis: Mutex<(Diff, DiffRuntimeData)> = Mutex::new({
+                let diff: Mutex<(Diff, DiffRuntimeData)> = Mutex::new({
+                    let diff: Diff = serde_json::from_reader(file).unwrap();
+                    let todo = (0..diff.items.len()).filter(|&i| diff.items[i].result.is_none()).collect();
                     let runtime_data = DiffRuntimeData {
                         last_check: Instant::now(),
                         pending: Vec::new(),
+                        todo,
                     };
-                    (synthesis, runtime_data)
+                    (diff, runtime_data)
                 });
 
                 let save_artifact = move |_| {};
@@ -118,7 +120,7 @@ impl DiffCommand {
                             std::thread::sleep(Duration::from_secs(5));
 
                             if last_save.elapsed() >= Duration::from_secs(10) {
-                                self.save_state(&synthesis.lock().unwrap().0);
+                                self.save_state(&diff.lock().unwrap().0);
                                 last_save = Instant::now();
                             }
                         }
@@ -126,7 +128,7 @@ impl DiffCommand {
 
                     {
                         let mut pool = ThreadPool::from_work(
-                            scope, dummy_oracle_source::create_dummy_oracle_source::<X64Arch>, &(), &synthesis, &save_artifact
+                            scope, dummy_oracle_source::create_dummy_oracle_source::<X64Arch>, &(), &diff, &save_artifact
                         );
 
                         // TODO: Automatically determine the right size
@@ -184,7 +186,7 @@ impl DiffCommand {
                 .unwrap();
 
                 println!("Performing last save...");
-                self.save_state(&synthesis.lock().unwrap().0);
+                self.save_state(&diff.lock().unwrap().0);
 
                 println!("OK!");
             }
@@ -216,21 +218,24 @@ impl DiffCommand {
                 let file = File::open(self.state_path()).unwrap();
                 let diff: Diff = serde_json::from_reader(file).unwrap();
 
-                for (index, DiffResult { diffs: result }) in diff.results.iter() {
-                    match result {
+                for (i, item) in diff.items.iter().enumerate() {
+                    let Some(result) = &item.result else {
+                        continue;
+                    };
+                    match &result.diffs {
                         Ok(diffs) if diffs.is_empty() && *r == ResultType::OK => {
-                            println!("Index {index}: {}", diff.todos[*index].description);
+                            println!("Index {i}: {}", item.description);
                             println!("  Result: OK");
                         },
                         Ok(diffs) if !diffs.is_empty() && *r == ResultType::Mismatch => {
-                            println!("Index {index}: {}", diff.todos[*index].description);
+                            println!("Index {i}: {}", item.description);
                             println!("  Result: MISMATCH");
-                            for (i, diff) in diffs.iter().enumerate() {
-                                println!("    Diff[{}-{}]: {:?}", index, i, diff);
+                            for (j, diff) in diffs.iter().enumerate() {
+                                println!("    Diff[{}-{}]: {:?}", i, j, diff);
                             }
                         },
                         Err(e) if *r == ResultType::Failure => {
-                            println!("Index {index}: {}", diff.todos[*index].description);
+                            println!("Index {i}: {}", item.description);
                             println!("  Result: FAILURE");
                             println!("    Error: {}", e);
                         },
@@ -243,18 +248,21 @@ impl DiffCommand {
                 let file = File::open(self.state_path()).unwrap();
                 let mut diff: Diff = serde_json::from_reader(file).unwrap();
 
-                diff.results.retain(|(index, DiffResult { diffs: r })| {
-                    let retain = match r {
+                for DiffItem { description, result: r, .. } in diff.items.iter_mut() {
+                    let Some(res) = r else {
+                        continue;
+                    };
+                    let retain = match &res.diffs {
                         Ok(diffs) if diffs.is_empty() && *result == ResultType::OK => false,
                         Ok(diffs) if !diffs.is_empty() && *result == ResultType::Mismatch => false,
                         Err(e) if *result == ResultType::Failure => false,
                         _ => true,
                     };
                     if !retain {
-                        diff.remaining_entries.push(*index);
+                        println!("Discarding result for {}: {:?}", description, r);
+                        *r = None;
                     }
-                    retain
-                });
+                }
 
                 let file = File::create(self.state_path()).unwrap();
                 serde_json::to_writer(file, &diff).unwrap();
@@ -264,10 +272,14 @@ impl DiffCommand {
                 let file = File::open(self.state_path()).unwrap();
                 let diff: Diff = serde_json::from_reader(file).unwrap();
 
-                let todo = &diff.todos[*todo_index];
-                let result = &diff.results.iter().find(|(i,_)| i == todo_index).unwrap().1;
+                let todo = &diff.items[*todo_index];
 
                 println!("Testing todo index {todo_index}, diff index {diff_index}: {}", todo.description);
+                let Some(result) = &todo.result else {
+                    println!("  Result: ???");
+                    println!("    Error: No result for this todo index");
+                    return;
+                };
                 let diffs = match &result.diffs {
                     Ok(diffs) => diffs,
                     Err(e) => {
@@ -299,24 +311,25 @@ impl DiffCommand {
         let mut ok = 0;
         let mut mismatch = 0;
         let mut failure_types = Vec::<(&DiffError, usize)>::new();
-        for (_, DiffResult { diffs: result }) in diff.results.iter() {
-            match result {
-                Ok(diffs) if diffs.is_empty() => ok += 1,
-                Ok(_) => mismatch += 1,
-                Err(e) => {
+        for DiffItem { result, .. } in diff.items.iter() {
+            match result.as_ref().map(|r| &r.diffs) {
+                Some(Ok(diffs)) if diffs.is_empty() => ok += 1,
+                Some(Ok(_)) => mismatch += 1,
+                Some(Err(e)) => {
                     let entry = failure_types.iter_mut().find(|(err, _)| *err == e);
                     if let Some((_, count)) = entry {
                         *count += 1;
                     } else {
-                        failure_types.push((e, 1));
+                        failure_types.push((&e, 1));
                     }
                 }
+                None => {},
             }
         }
         let failure = failure_types.iter().map(|(_, count)| *count).sum::<usize>();
 
-        let num_processed = diff.results.len();
-        let num_encodings = diff.todos.len();
+        let num_processed = ok + mismatch + failure;
+        let num_encodings = diff.items.len();
         let seconds_running = diff.runtime_ms / 1000;
         let hours_running = seconds_running as f64 / 3600.0;
         let encodings_per_hour = num_processed as f64 / hours_running;
