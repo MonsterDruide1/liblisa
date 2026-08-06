@@ -931,6 +931,8 @@ dependencies = [
  "liblisa-libcli",
  "liblisa-x64-observer",
  "log",
+ "serde",
+ "serde_json",
  "test-log",
 ]
 
