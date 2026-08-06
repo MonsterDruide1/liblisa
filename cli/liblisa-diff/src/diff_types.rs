@@ -58,7 +58,7 @@ pub struct DiffThreadState {
     pub rng: Xoshiro256PlusPlus,
 }
 
-#[derive(Error, Clone, Debug, Serialize, Deserialize)]
+#[derive(Error, Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum DiffError {
     #[error("randomization error: {0}")]
     RandomizationError(RandomizationError),

@@ -24,7 +24,7 @@ use super::SystemStateByteView;
 
 /// Error that can occur while generating a randomized CPU input state.
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-#[derive(Error, Debug, Clone, Serialize, Deserialize)]
+#[derive(Error, Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum RandomizationError {
     /// Modifying the values of one of the storage locations was not possible.
     #[error("Modifying values failed")]

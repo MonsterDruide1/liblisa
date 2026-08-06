@@ -6,7 +6,7 @@ use liblisa::semantics::default::computation::SynthesizedComputation;
 use liblisa_libcli::{clear_screen, threadpool::ThreadPool};
 
 use crate::{diff::{create_state, run_instr}, diff_types::NUM_STATES_PER_INSTR, dummy_oracle_source};
-use crate::diff_types::{Diff, DiffResult, DiffRuntimeData};
+use crate::diff_types::{Diff, DiffError, DiffResult, DiffRuntimeData};
 
 #[derive(Clone, Debug, PartialEq, clap::ValueEnum)]
 enum ResultType {
@@ -244,14 +244,22 @@ impl DiffCommand {
     fn print_status(diff: &Diff) {
         let mut ok = 0;
         let mut mismatch = 0;
-        let mut failure = 0;
+        let mut failure_types = Vec::<(&DiffError, usize)>::new();
         for (_, DiffResult { diffs: result }) in diff.results.iter() {
             match result {
                 Ok(diffs) if diffs.is_empty() => ok += 1,
                 Ok(_) => mismatch += 1,
-                Err(_) => failure += 1,
+                Err(e) => {
+                    let entry = failure_types.iter_mut().find(|(err, _)| *err == e);
+                    if let Some((_, count)) = entry {
+                        *count += 1;
+                    } else {
+                        failure_types.push((e, 1));
+                    }
+                }
             }
         }
+        let failure = failure_types.iter().map(|(_, count)| *count).sum::<usize>();
 
         let num_processed = diff.results.len();
         let num_encodings = diff.todos.len();
@@ -264,6 +272,9 @@ impl DiffCommand {
         println!("    {ok} encodings are OK");
         println!("    {mismatch} encodings have mismatches");
         println!("    {failure} encodings failed completely");
+        for (err, count) in failure_types {
+            println!("        {count} encodings failed with error: {}", err);
+        }
 
         let remaining = (num_encodings - num_processed) as f64 / encodings_per_hour;
         let percent = num_processed as f64 * 100.0 / num_encodings as f64;
