@@ -1,6 +1,6 @@
 use liblisa_ghidra_x64_observer::GhidraOracle;
 use liblisa_x64_observer::VmOracleSource;
-use log::{debug, error, trace};
+use log::{debug, error, info, trace};
 use rand::{Rng, SeedableRng};
 use rand_xoshiro::Xoshiro256PlusPlus;
 
@@ -14,8 +14,11 @@ use crate::dummy_oracle_source::DoubleCheckedMappableArea;
 use crate::state_diff::{self, Difference, DifferenceType};
 use crate::diff_types::{DiffError, DiffThreadState};
 
+use std::fs::File;
+
 const MAX_MEMORY_ACCESS_OFFSET: u64 = 32;
 const MAX_DIFFS_TO_KEEP: usize = 123;
+const UNALIGNED_ACCESS_MAX_RETRIES: usize = 10;
 
 fn translate_ghidra_error(e: &OracleError) -> Option<DiffError> {
     let OracleError::ApiError(e) = e else {
@@ -109,6 +112,7 @@ fn run_instr_single(
     let map = state.mappable.clone();
     let state_gen = StateGen::new(&accesses, &map)?;
     
+    let mut unaligned_access_counter = 0;
     let mut before = state_gen.randomize_new(&mut state.rng)?;
     loop {
         let r1 = state.o1.observe(&before);
@@ -118,6 +122,7 @@ fn run_instr_single(
         // => translate to `DiffError` and abort early
         if let Err(e) = &r1 {
             if let Some(diff_error) = translate_ghidra_error(e) {
+                info!("Ghidra threw custom error, aborting early: {:?} due to {:?}", diff_error, e);
                 return Err(diff_error);
             }
         }
@@ -131,7 +136,9 @@ fn run_instr_single(
                 addr.distance_between(page.start_addr()) <= MAX_MEMORY_ACCESS_OFFSET || addr.distance_between(page.last_address_of_page()) <= MAX_MEMORY_ACCESS_OFFSET
             });
             if next_to_mapped {
+                debug!("CPU threw MemoryAccess with address next to existing mapping, while Ghidra was fine: {:?}, trying to add mapping and try again", addr);
                 if !try_add_memory_mapping(&mut before, *addr, &mut state.rng) {
+                    debug!("CPU threw MemoryAccess with address next to existing mapping, while Ghidra was fine: {:?}, but could not add mapping, randomizing new state and trying again", addr);
                     before = state_gen.randomize_new(&mut state.rng)?;
                 }
                 continue;
@@ -143,6 +150,11 @@ fn run_instr_single(
         // => randomize new state and try again
         if let (Err(OracleError::MemoryAccess(addr)), Err(OracleError::GeneralFault)) = (&r1, &r2) {
             if addr.as_u64() % 16 != 0 {
+                unaligned_access_counter += 1;
+                if unaligned_access_counter > UNALIGNED_ACCESS_MAX_RETRIES {
+                    info!("Instruction keeps causing unaligned access ({} retries), aborting: {:?}", unaligned_access_counter, instr);
+                    return Err(DiffError::UnalignedAccessKeepsFaulting);
+                }
                 before = state_gen.randomize_new(&mut state.rng)?;
                 continue;
             }

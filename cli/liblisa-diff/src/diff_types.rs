@@ -60,10 +60,15 @@ pub struct DiffThreadState {
 
 #[derive(Error, Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum DiffError {
+    // should not happen => results need to be checked for reason:
+    #[error("??? instruction keeps faulting ???")]
+    InstructionKeepsFaulting,
+
+    // cannot be handled, abort diffing and report to user:
+    #[error("unaligned access keeps faulting")]
+    UnalignedAccessKeepsFaulting,
     #[error("randomization error: {0}")]
     RandomizationError(RandomizationError),
-    #[error("instruction keeps faulting")]
-    InstructionKeepsFaulting,
     #[error("invalid instruction on both systems")]
     InvalidInstruction,
     #[error("Ghidra requires custom Pcode op")]
