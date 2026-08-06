@@ -114,7 +114,7 @@ impl<'a, A: Arch, M: MappableArea> StateGen<'a, A, M> {
     /// This function builds memory access constraints for the random state generation.
     /// If it is not possible to generate a state of non-overlapping memory mappings, this function will return an error.
     pub fn new(accesses: &'a MemoryAccesses<A>, mappable: &'a M) -> Result<Self, RandomizationError> {
-        debug!("Determining constraints for {accesses}");
+        trace!("Determining constraints for {accesses}");
         let ps = 1 << A::PAGE_BITS;
         let pm = ps - 1;
         let constraints = accesses
@@ -200,7 +200,7 @@ impl<'a, A: Arch, M: MappableArea> StateGen<'a, A, M> {
                     "min_offset={min_offset}, max_offset={max_offset}; {accesses:?}"
                 );
 
-                debug!("offset in {min_offset}..{max_offset}");
+                trace!("offset in {min_offset}..{max_offset}");
                 if min_offset > ps - m.size.end {
                     Constraint::Impossible
                 } else {
@@ -211,7 +211,7 @@ impl<'a, A: Arch, M: MappableArea> StateGen<'a, A, M> {
                 }
             })
             .collect::<Vec<_>>();
-        debug!("Constraints = {:X?}", constraints);
+        trace!("Constraints = {:X?}", constraints);
 
         if let Some(index) = constraints.iter().position(|c| matches!(c, Constraint::Impossible)) {
             warn!("StateGen::new failed with impossible constraint");
