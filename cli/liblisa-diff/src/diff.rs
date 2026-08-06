@@ -147,19 +147,42 @@ fn run_instr_single(
             }
         }
 
-        // special case: if CPU throws General Fault with address that is not 16-byte aligned
-        // and Ghidra reports MemoryAccess, it's because Ghidra doesn't handle unaligned accesses properly
+        // special case: if CPU throws General Fault due to address that is not 16-byte aligned and Ghidra reports
+        // - MemoryAccess with non-16-divisible address (=> unaligned access address),
+        // - MemoryAccess on first byte of page directly after a mapped page (=> flows into next page),
+        // - reports no failure at all (=> access is on already-mapped page)
+        // it's because Ghidra doesn't handle unaligned accesses properly
         // => randomize new state and try again
-        if let (Err(OracleError::MemoryAccess(addr)), Err(OracleError::GeneralFault)) = (&r1, &r2) {
-            if addr.as_u64() % 16 != 0 {
-                unaligned_access_counter += 1;
-                if unaligned_access_counter > UNALIGNED_ACCESS_MAX_RETRIES {
-                    info!("Instruction keeps causing unaligned access ({} retries), aborting: {:?}", unaligned_access_counter, instr);
-                    return Err(DiffError::UnalignedAccessKeepsFaulting);
+        let is_unaligned_access = match (&r1, &r2) {
+            (Err(OracleError::MemoryAccess(addr)), Err(OracleError::GeneralFault)) => {
+                if addr.as_u64() % 16 != 0 {
+                    // non-16-byte-aligned access address => unaligned access itself
+                    true
+                } else if addr.as_u64() == addr.page::<X64Arch>().start_addr().as_u64() {
+                    // potentially first byte after mapped page with unaligned access
+                    before.memory().iter().any(|(mapped_addr, _, _)| {
+                        let page: Page<X64Arch> = mapped_addr.page();
+                        page.last_address_of_page().as_u64() == addr.page::<X64Arch>().start_addr().as_u64().wrapping_sub(1)
+                    })
+                } else {
+                    false
                 }
-                before = state_gen.randomize_new(&mut state.rng)?;
-                continue;
             }
+            (Ok(_), Err(OracleError::GeneralFault)) => {
+                // Ghidra did not report any error, but CPU threw General Fault
+                // we cannot do more precise checks here, but it's likely an unaligned access
+                true
+            }
+            _ => false,
+        };
+        if is_unaligned_access {
+            unaligned_access_counter += 1;
+            if unaligned_access_counter > UNALIGNED_ACCESS_MAX_RETRIES {
+                info!("Instruction keeps causing unaligned access ({} retries), aborting: {:?}", unaligned_access_counter, instr);
+                return Err(DiffError::UnalignedAccessKeepsFaulting);
+            }
+            before = state_gen.randomize_new(&mut state.rng)?;
+            continue;
         }
 
         // if page fault occurred, try adding mapping and try again
