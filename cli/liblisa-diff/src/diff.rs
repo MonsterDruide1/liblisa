@@ -289,8 +289,13 @@ pub fn run_instr(
     let mut err = 0;
     while ok < num_states {
         if err > num_states*3 {
-            error!("Instruction keeps faulting ({} ok, {} err), aborting: {:?}", ok, err, instr);
-            return Err(DiffError::InstructionKeepsFaulting);
+            if ok > 0 {
+                info!("Instruction keeps faulting ({} ok, {} err), continuing: {:?}", ok, err, instr);
+                err = 0;
+            } else {
+                error!("Instruction keeps faulting ({} ok, {} err), aborting: {:?}", ok, err, instr);
+                return Err(DiffError::InstructionKeepsFaulting);
+            }
         }
         if run_instr_single(instr, state)? {
             ok += 1;
