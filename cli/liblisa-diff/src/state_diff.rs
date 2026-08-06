@@ -1,5 +1,5 @@
 use liblisa::arch::{Arch, CpuState, Register};
-use liblisa::arch::x64::{GpReg, X64Arch, X64Flag, X64Reg, X87, XmmReg};
+use liblisa::arch::x64::{GpReg, X64Arch, X64Flag, X64Reg, X87Reg, XmmReg};
 use liblisa::oracle::OracleError;
 use liblisa::state::{Addr, SystemState};
 use liblisa::value::Value;
@@ -26,9 +26,13 @@ pub enum OkMismatch {
     RegMismatch(GpReg, u64, u64),
     FlagsMismatch(X64Flag, bool, bool),
     XmmMismatch(XmmReg, [u8; 32], [u8; 32]),
-    X87Mismatch(X87, X87),
     XmmExceptionFlagsMismatch(u64, u64),
     XmmDazMismatch(u8, u8),
+    X87RegMismatch(X87Reg, [u8; 10], [u8; 10]),
+    X87TopOfStackMismatch(u8, u8),
+    X87ExceptionFlagsMismatch(u64, u64),
+    X87ConditionCodesMismatch(u32, u32),
+    X87TagWordMismatch(u8, u8),
     // Mem State
     MemoryMismatch(Addr, Vec<u8>, Vec<u8>),
 }
@@ -79,11 +83,15 @@ impl PartialEq for OkMismatch {
             (RegMismatch(r1, _, _), RegMismatch(r2, _, _)) => r1 == r2,
             (FlagsMismatch(f1, _, _), FlagsMismatch(f2, _, _)) => f1 == f2,
             (XmmMismatch(r1, _, _), XmmMismatch(r2, _, _)) => r1 == r2,
+            (X87RegMismatch(r1, _, _), X87RegMismatch(r2, _, _)) => r1 == r2,
 
             // standard cases: consider everything about mismatch
-            (X87Mismatch(x1, x2), X87Mismatch(y1, y2)) => x1 == y1 && x2 == y2,
             (XmmExceptionFlagsMismatch(f1, f2), XmmExceptionFlagsMismatch(g1, g2)) => f1 == g1 && f2 == g2,
             (XmmDazMismatch(d1, d2), XmmDazMismatch(e1, e2)) => d1 == e1 && d2 == e2,
+            (X87TopOfStackMismatch(t1, t2), X87TopOfStackMismatch(u1, u2)) => t1 == u1 && t2 == u2,
+            (X87ExceptionFlagsMismatch(e1, e2), X87ExceptionFlagsMismatch(f1, f2)) => e1 == f1 && e2 == f2,
+            (X87ConditionCodesMismatch(c1, c2), X87ConditionCodesMismatch(d1, d2)) => c1 == d1 && c2 == d2,
+            (X87TagWordMismatch(t1, t2), X87TagWordMismatch(u1, u2)) => t1 == u1 && t2 == u2,
             // all other combinations are not equal
             _ => false,
         }
@@ -139,14 +147,36 @@ pub fn compare(r1: &Result<SystemState<X64Arch>, OracleError>, r2: &Result<Syste
                     mismatches.push(OkMismatch::XmmMismatch(XmmReg::Reg(reg), v1, v2));
                 }
             }
-            if r1.cpu().x87 != r2.cpu().x87 {
-                mismatches.push(OkMismatch::X87Mismatch(r1.cpu().x87.clone(), r2.cpu().x87.clone()));
+            for reg in 0..8 {
+                let Value::Bytes(v1) = CpuState::<X64Arch>::reg(r1.cpu(), X64Reg::X87(X87Reg::Fpr(reg))) else {
+                    panic!("Expected X87 register to be of type Value::Bytes");
+                };
+                let v1: [u8; 10] = v1.try_into().unwrap();
+                let Value::Bytes(v2) = CpuState::<X64Arch>::reg(r2.cpu(), X64Reg::X87(X87Reg::Fpr(reg))) else {
+                    panic!("Expected X87 register to be of type Value::Bytes");
+                };
+                let v2: [u8; 10] = v2.try_into().unwrap();
+                if v1 != v2 {
+                    mismatches.push(OkMismatch::X87RegMismatch(X87Reg::Fpr(reg), v1, v2));
+                }
             }
             if r1.cpu().xmm_exception_flags != r2.cpu().xmm_exception_flags {
                 mismatches.push(OkMismatch::XmmExceptionFlagsMismatch(r1.cpu().xmm_exception_flags, r2.cpu().xmm_exception_flags));
             }
             if r1.cpu().xmm_daz != r2.cpu().xmm_daz {
                 mismatches.push(OkMismatch::XmmDazMismatch(r1.cpu().xmm_daz, r2.cpu().xmm_daz));
+            }
+            if r1.cpu().x87.top_of_stack != r2.cpu().x87.top_of_stack {
+                mismatches.push(OkMismatch::X87TopOfStackMismatch(r1.cpu().x87.top_of_stack, r2.cpu().x87.top_of_stack));
+            }
+            if r1.cpu().x87.exception_flags != r2.cpu().x87.exception_flags {
+                mismatches.push(OkMismatch::X87ExceptionFlagsMismatch(r1.cpu().x87.exception_flags, r2.cpu().x87.exception_flags));
+            }
+            if r1.cpu().x87.condition_codes != r2.cpu().x87.condition_codes {
+                mismatches.push(OkMismatch::X87ConditionCodesMismatch(r1.cpu().x87.condition_codes, r2.cpu().x87.condition_codes));
+            }
+            if r1.cpu().x87.tag_word != r2.cpu().x87.tag_word {
+                mismatches.push(OkMismatch::X87TagWordMismatch(r1.cpu().x87.tag_word, r2.cpu().x87.tag_word));
             }
             for ((addr1, perms1, data1), (addr2, perms2, data2)) in r1.memory().iter().zip(r2.memory().iter()) {
                 assert!(addr1 == addr2 && perms1 == perms2);
