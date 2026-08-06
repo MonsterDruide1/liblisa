@@ -43,13 +43,13 @@ fn try_add_memory_mapping(state: &mut SystemState<X64Arch>, addr: Addr, rng: &mu
 
     let addr_minus = addr.as_u64().saturating_sub(MAX_MEMORY_ACCESS_OFFSET);
     let start = addr_minus.max(addr.page::<X64Arch>().start_addr().as_u64());
-    let addr = Addr::new(start);
+    let new_addr = Addr::new(start);
 
     let addr_plus = addr.as_u64().saturating_add(MAX_MEMORY_ACCESS_OFFSET);
     let end = addr_plus.min(addr.page::<X64Arch>().last_address_of_page().as_u64());
-    let size = end.checked_sub(start).unwrap();
+    let size = end.checked_sub(start).unwrap() + 1;
 
-    memory.push((addr, Permissions::ReadWrite, randomized_bytes(rng, size as usize)));
+    memory.push((new_addr, Permissions::ReadWrite, randomized_bytes(rng, size as usize)));
     mem.data = memory.into_boxed_slice();
     true
 }
