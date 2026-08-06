@@ -19,6 +19,8 @@ use std::fs::File;
 const MAX_MEMORY_ACCESS_OFFSET: u64 = 32;
 const MAX_DIFFS_TO_KEEP: usize = 123;
 const UNALIGNED_ACCESS_MAX_RETRIES: usize = 10;
+// runtime difference: 2s vs. 24s on a single instruction with 2500 states
+const MEM_ACCESS_SCAN_GHIDRA_ONLY: bool = true;
 
 fn translate_ghidra_error(e: &OracleError) -> Option<DiffError> {
     let OracleError::ApiError(e) = e else {
@@ -115,8 +117,8 @@ fn run_instr_single(
     let mut unaligned_access_counter = 0;
     let mut before = state_gen.randomize_new(&mut state.rng)?;
     loop {
-        let r1 = state.o1.observe(&before);
-        let r2 = state.o2.observe(&before);
+        let mut r1 = state.o1.observe(&before);
+        let mut r2 = state.o2.observe(&before);
 
         // special case: Ghidra might throw custom errors indicating that emulation doesn't behave properly
         // => translate to `DiffError` and abort early
@@ -160,38 +162,98 @@ fn run_instr_single(
             }
         }
 
+        // if page fault occurred, try adding mapping and try again
+        // if mapping cannot be added, randomize new state and try again
+        if let Err(OracleError::MemoryAccess(addr)) = r1 {
+            if let Some(result) = state_diff::compare(&r1, &r2) {
+                try_report_diff(result, &before, state);
+            }
+            if !try_add_memory_mapping(&mut before, addr, &mut state.rng) {
+                before = state_gen.randomize_new(&mut state.rng)?;
+            }
+            continue;
+        }
+        if let Err(OracleError::MemoryAccess(addr)) = r2 {
+            if let Some(result) = state_diff::compare(&r1, &r2) {
+                try_report_diff(result, &before, state);
+            }
+            if !try_add_memory_mapping(&mut before, addr, &mut state.rng) {
+                before = state_gen.randomize_new(&mut state.rng)?;
+            }
+            continue;
+        }
+
+        if r1.is_ok() && r2.is_ok() {
+            // scan memory accesses and add new mappings for any that are not already mapped
+            // might happen if accesses go to already-mapped page, but outside mapped range
+            let mut need_more_mappings = true;
+            let mut any_new_mappings = false;
+            let mut restart = false;
+            loop {
+                need_more_mappings = false;
+                
+                let addrs = if MEM_ACCESS_SCAN_GHIDRA_ONLY {
+                    state.o1.scan_memory_accesses(&before).expect("scan_memory_accesses should not fail if observe succeeded")
+                } else {
+                    let a1 = state.o1.scan_memory_accesses(&before);
+                    let a2 = state.o2.scan_memory_accesses(&before);
+                    let (Ok(accesses1), Ok(accesses2)) = (a1, a2) else {
+                        unreachable!("scan_memory_accesses should not fail if observe succeeded");
+                    };
+                    accesses1.into_iter().chain(accesses2.into_iter()).collect()
+                };
+                for addr in addrs {
+                    let is_mapped = before.memory().iter().any(|(mapped_addr, _, data)| {
+                        mapped_addr.into_area(data.len() as u64).contains(addr)
+                    });
+                    if !is_mapped {
+                        debug!("Adding mapping for memory access to {:x} that was not already mapped", addr.as_u64());
+                        debug!("  before: {:?}", before);
+                        if !try_add_memory_mapping(&mut before, addr, &mut state.rng) {
+                            before = state_gen.randomize_new(&mut state.rng)?;
+                            // do not continue adding more mapping, as new state has been generated
+                            restart = true;
+                            break;
+                        }
+                        // try_add_memory_mapping adds range, and accesses might contain duplicates, so just start over and re-scan
+                        need_more_mappings = true;
+                        any_new_mappings = true;
+                    }
+                }
+                // for restart: do not try collecting more mappings here, as new state must first be checked with MemoryAccess errors
+                // if no new mappings were added, we can break out of the loop and continue with the instruction execution
+                if restart || !need_more_mappings {
+                    break;
+                }
+            }
+            if restart {
+                continue;  // start over with the outer loop on the new state
+            }
+            if any_new_mappings {
+                // done with adding mappings, re-execute state to get final result
+                r1 = state.o1.observe(&before);
+                r2 = state.o2.observe(&before);
+            }
+        }
+        
+
         let result = state_diff::compare(&r1, &r2);
         if let Some(result) = result {
             try_report_diff(result, &before, state);
         }
 
-        // if page fault occurred, try adding mapping and try again
-        // if mapping cannot be added, randomize new state and try again
-        if let Err(OracleError::MemoryAccess(addr)) = r1 {
-            if !try_add_memory_mapping(&mut before, addr, &mut state.rng) {
-                before = state_gen.randomize_new(&mut state.rng)?;
-            }
-            continue;
-        }
-        else if let Err(OracleError::MemoryAccess(addr)) = r2 {
-            if !try_add_memory_mapping(&mut before, addr, &mut state.rng) {
-                before = state_gen.randomize_new(&mut state.rng)?;
-            }
-            continue;
-        }
-        else {
-            // neither of them faulted, and we already reported the potential diff => done
-            trace!("Instruction executed on both oracles without page fault: {:?}", instr);
-            trace!("  Ghidra result: {:?}", r1);
-            trace!("  VM result: {:?}", r2);
+        
+        // neither of them faulted, and we already reported the potential diff => done
+        trace!("Instruction executed on both oracles without page fault: {:?}", instr);
+        trace!("  Ghidra result: {:?}", r1);
+        trace!("  VM result: {:?}", r2);
 
-            // if both agree that the instruction is invalid, throw harder error to abort early
-            if let (Err(OracleError::InvalidInstruction), Err(OracleError::InvalidInstruction)) = (&r1, &r2) {
-                return Err(DiffError::InvalidInstruction);
-            }
-
-            return Ok(r1.is_ok() && r2.is_ok())
+        // if both agree that the instruction is invalid, throw harder error to abort early
+        if let (Err(OracleError::InvalidInstruction), Err(OracleError::InvalidInstruction)) = (&r1, &r2) {
+            return Err(DiffError::InvalidInstruction);
         }
+
+        return Ok(r1.is_ok() && r2.is_ok())
     }
 }
 
