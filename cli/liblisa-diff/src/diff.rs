@@ -8,12 +8,11 @@ use liblisa::Instruction;
 use liblisa::arch::{Arch, CpuState, x64::{GpReg, X64Arch}};
 use liblisa::encoding::dataflows::{AccessKind, AddressComputation, Dest, Inputs, MemoryAccess, MemoryAccesses, Size, Source};
 use liblisa::oracle::{Oracle, OracleError, OracleSource};
-use liblisa::state::{Addr, Page, Permissions, SystemState, random::{RandomizationError, StateGen, randomized_bytes}};
-use liblisa_enc::AccessAnalysisError;
+use liblisa::state::{Addr, Page, Permissions, SystemState, random::{StateGen, randomized_bytes}};
 
 use crate::dummy_oracle_source::DoubleCheckedMappableArea;
 use crate::state_diff::{self, Difference, DifferenceType};
-use crate::diff_types::DiffThreadState;
+use crate::diff_types::{DiffError, DiffThreadState};
 
 const MAX_MEMORY_ACCESS_OFFSET: u64 = 32;
 const MAX_DIFFS_TO_KEEP: usize = 123;
@@ -101,7 +100,7 @@ fn try_report_diff(diff: DifferenceType, before: &SystemState<X64Arch>, state: &
 fn run_instr_single(
     instr: &Instruction,
     state: &mut DiffThreadState,
-) -> Result<bool, AccessAnalysisError<X64Arch>> {
+) -> Result<bool, DiffError> {
     let accesses: MemoryAccesses<X64Arch> = MemoryAccesses {
         instr: *instr,
         memory: vec![MemoryAccess {
@@ -174,7 +173,7 @@ fn run_instr_single(
 
             // if both agree that the instruction is invalid, throw harder error to abort early
             if let (Err(OracleError::InvalidInstruction), Err(OracleError::InvalidInstruction)) = (&r1, &r2) {
-                return Err(AccessAnalysisError::InvalidInstruction);
+                return Err(DiffError::InvalidInstruction);
             }
 
             return Ok(
@@ -189,13 +188,13 @@ pub fn run_instr(
     instr: &Instruction,
     num_states: usize,
     state: &mut DiffThreadState
-) -> Result<(), AccessAnalysisError<X64Arch>> {
+) -> Result<(), DiffError> {
     let mut ok = 0;
     let mut err = 0;
     while ok < num_states {
         if err > num_states*3 {
             error!("Instruction keeps faulting ({} ok, {} err), aborting: {:?}", ok, err, instr);
-            return Err(AccessAnalysisError::InstructionKeepsFaulting);
+            return Err(DiffError::InstructionKeepsFaulting);
         }
         if run_instr_single(instr, state)? {
             ok += 1;

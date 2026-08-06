@@ -1,13 +1,14 @@
 use std::time::Instant;
+use rand_xoshiro::Xoshiro256PlusPlus;
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 use liblisa::Instruction;
 use liblisa::arch::x64::X64Arch;
 use liblisa::oracle::Oracle;
-use liblisa_enc::AccessAnalysisError;
+use liblisa::state::random::RandomizationError;
 use liblisa_ghidra_x64_observer::GhidraOracle;
 use liblisa_x64_observer::VmOracle;
-use rand_xoshiro::Xoshiro256PlusPlus;
-use serde::{Deserialize, Serialize};
 
 use crate::dummy_oracle_source::DoubleCheckedMappableArea;
 use crate::state_diff::Difference;
@@ -46,7 +47,7 @@ pub struct DiffRequest {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DiffResult {
-    pub diffs: Result<Vec<Difference>, AccessAnalysisError<X64Arch>>,
+    pub diffs: Result<Vec<Difference>, DiffError>,
 }
 
 pub struct DiffThreadState {
@@ -55,4 +56,20 @@ pub struct DiffThreadState {
     pub mappable: DoubleCheckedMappableArea<<GhidraOracle as Oracle<X64Arch>>::MappableArea, <VmOracle as Oracle<X64Arch>>::MappableArea>,
     pub diffs: Vec<Difference>,
     pub rng: Xoshiro256PlusPlus,
+}
+
+#[derive(Error, Clone, Debug, Serialize, Deserialize)]
+pub enum DiffError {
+    #[error("randomization error: {0}")]
+    RandomizationError(RandomizationError),
+    #[error("instruction keeps faulting")]
+    InstructionKeepsFaulting,
+    #[error("invalid instruction on both systems")]
+    InvalidInstruction,
+}
+
+impl From<RandomizationError> for DiffError {
+    fn from(e: RandomizationError) -> Self {
+        DiffError::RandomizationError(e)
+    }
 }

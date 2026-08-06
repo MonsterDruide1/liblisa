@@ -5,7 +5,6 @@ use liblisa::arch::{Arch, x64::X64Arch};
 use liblisa::encoding::Encoding;
 use liblisa::oracle::Oracle;
 use liblisa::semantics::default::computation::SynthesizedComputation;
-use liblisa_enc::AccessAnalysisError;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
@@ -19,7 +18,7 @@ use crate::state_diff::Difference;
 impl DiffRequest {
     pub fn diff<A: Arch, O: Oracle<A>, R: Rng>(
         &self, oracle: &mut O, rng: &mut R,
-    ) -> Result<Vec<Difference>, AccessAnalysisError<X64Arch>> {
+    ) -> Result<Vec<Difference>, DiffError> {
         let oracle: &mut DummyOracle<X64Arch> = unsafe {
             &mut *(oracle as *mut O as *mut DummyOracle<X64Arch>)
         };
