@@ -1,5 +1,5 @@
 use crate::diff_types::{Diff, DiffResult};
-use crate::state_diff::{Difference, DifferenceType, OkMismatch};
+use crate::state_diff::{DifferenceType, OkMismatch};
 use liblisa::arch::{CpuState, x64::{GpReg, X64Arch, X64Flag}};
 use liblisa::state::SystemState;
 use thiserror::Error;
@@ -58,19 +58,18 @@ pub unsafe fn postprocess(diff: &Diff) -> (Vec<ExplainedMismatch>, Vec<Unexplain
         for (j, diff) in diffs.iter().enumerate() {
             match &diff.diff_type {
                 DifferenceType::OkOk(ref mismatches) => {
-                    // NOTE: one instruction might have multiple mismatches, so multiple entries could end up in `explained`!
-                    // if one mismatch is unexplainable, abort checking the remaining mismatches to avoid duplicates in `unexplained`.
+                    // NOTE: one instruction might have multiple mismatches, so multiple entries could end up in `explained` and `unexplained`!
                     for mismatch in mismatches {
                         if let Some(explanation) = try_explain_mismatch(mismatch, &diff.example_before) {
                             explained.push(explanation);
                         } else {
-                            unexplained.push(build_unexplained(i, j, &diff));
-                            break;
+                            let diff_type = DifferenceType::OkOk(vec![mismatch.clone()]);
+                            unexplained.push(build_unexplained(i, j, diff_type, &diff.example_before));
                         }
                     }
                 }
                 _ => {
-                    unexplained.push(build_unexplained(i, j, &diff));
+                    unexplained.push(build_unexplained(i, j, diff.diff_type.clone(), &diff.example_before));
                 }
             }
         }
@@ -79,14 +78,14 @@ pub unsafe fn postprocess(diff: &Diff) -> (Vec<ExplainedMismatch>, Vec<Unexplain
     (explained, unexplained)
 }
 
-unsafe fn build_unexplained(item_index: usize, diff_index: usize, diff: &Difference) -> UnexplainedMismatch {
-    let instr = get_instruction(&diff.example_before).unwrap_or(&[]);
+unsafe fn build_unexplained(item_index: usize, diff_index: usize, diff_type: DifferenceType, state: &SystemState<X64Arch>) -> UnexplainedMismatch {
+    let instr = get_instruction(&state).unwrap_or(&[]);
     let xed = XedInterface::new(instr).expect("failed to get xed interface");
     let iclass = xed.get_iclass();
     UnexplainedMismatch {
         item_index,
         diff_index,
-        diff_type: diff.diff_type.clone(),
+        diff_type,
         instr: instr.to_vec(),
         iclass,
     }
