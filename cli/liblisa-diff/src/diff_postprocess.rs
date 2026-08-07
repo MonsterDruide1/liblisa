@@ -20,6 +20,11 @@ pub enum ExplainedMismatch {
     /// same for `PUNPCKLBW` and `PUNPCKLWD`
     /// TODO: more research on why this actually happens? Find other examples with `local x:Y` followed by `x[?]`?
     PMaxMinSrcCopy,
+    /// in Ghidra: SHR contains hardcoded `OF = 0`, while specification says
+    /// > For the SHR instruction, the OF flag is set to the most-significant bit of the original operand.
+    /// > The OF flag is affected only for 1-bit shifts [...]; otherwise, it is undefined.
+    /// => already caught as undefined for non-1-bit shifts, so explicitly handle 1-bit shifts here
+    SHR1OF,
 }
 
 impl ExplainedMismatch {
@@ -37,6 +42,9 @@ impl ExplainedMismatch {
             ExplainedMismatch::PMaxMinSrcCopy => {
                 "Ghidra's implementation of PMAX/PMIN instructions reuses lower bits of source for entire calculation".to_string()
             }
+            ExplainedMismatch::SHR1OF => {
+                "Ghidra's implementation of SHR instruction sets OF=0 for 1-bit shifts, while specification says it should be the most-significant bit of the original operand".to_string()
+            }
         }
     }
     pub fn name(&self) -> String {
@@ -45,6 +53,7 @@ impl ExplainedMismatch {
             ExplainedMismatch::AfNotImplemented => "AfNotImplemented".to_string(),
             ExplainedMismatch::X87ResetOnMMX => "X87ResetOnMMX".to_string(),
             ExplainedMismatch::PMaxMinSrcCopy => "PMaxMinSrcCopy".to_string(),
+            ExplainedMismatch::SHR1OF => "SHR1OF".to_string(),
         }
     }
 }
@@ -129,6 +138,9 @@ unsafe fn try_explain_mismatch(mismatch: &OkMismatch, state: &SystemState<X64Arc
             if *flag == X64Flag::Af {
                 return Some(ExplainedMismatch::AfNotImplemented);
             }
+            if *flag == X64Flag::Of && xed.get_iclass() == "SHR" && xed.get_operands().get(0) == Some(&InstrOperand::ImmUnsigned(1)) {
+                return Some(ExplainedMismatch::SHR1OF);
+            }
             None
         }
         X87TopOfStackMismatch(ghidra, vm) => {
@@ -147,7 +159,7 @@ unsafe fn try_explain_mismatch(mismatch: &OkMismatch, state: &SystemState<X64Arc
             let xed = get_xed_interface(state).expect("failed to get xed interface");
             let iclass = xed.get_iclass();
             if ["PMAXSW", "PMAXUB", "PMINSW", "PMINUB", "PUNPCKLBW", "PUNPCKLWD"].contains(&iclass.as_str()) {
-                if xed.get_operands_mm().get(0) == Some(&X64Reg::X87(*reg)) {
+                if xed.get_operands().get(0) == Some(&InstrOperand::Reg(X64Reg::X87(*reg))) {
                     return Some(ExplainedMismatch::PMaxMinSrcCopy);
                 }
             }
@@ -165,6 +177,15 @@ enum XedError {
 
 struct XedInterface {
     inst: xed_decoded_inst_t,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum InstrOperand {
+    Reg(X64Reg),
+    Mem(u64),
+    ImmSigned(i32),
+    ImmUnsigned(u64),
+    Unk,
 }
 
 unsafe fn c2s(ptr: *const i8) -> String {
@@ -226,23 +247,37 @@ impl XedInterface {
 
     // note: this function is very specific to the current use case
     // and might be generalized in the future
-    pub unsafe fn get_operands_mm(&self) -> Vec<X64Reg> {
+    pub unsafe fn get_operands(&self) -> Vec<InstrOperand> {
         let xi = xed_decoded_inst_inst(&self.inst);
         let mut operands = Vec::new();
         for i in 0..xed_inst_noperands(xi) {
-            let operand_name = xed_operand_name(xed_inst_operand(xi, i));
-            let reg = match xed_decoded_inst_get_reg(&self.inst, operand_name) {
-                XED_REG_MMX0 => X64Reg::X87(X87Reg::Fpr(0)),
-                XED_REG_MMX1 => X64Reg::X87(X87Reg::Fpr(1)),
-                XED_REG_MMX2 => X64Reg::X87(X87Reg::Fpr(2)),
-                XED_REG_MMX3 => X64Reg::X87(X87Reg::Fpr(3)),
-                XED_REG_MMX4 => X64Reg::X87(X87Reg::Fpr(4)),
-                XED_REG_MMX5 => X64Reg::X87(X87Reg::Fpr(5)),
-                XED_REG_MMX6 => X64Reg::X87(X87Reg::Fpr(6)),
-                XED_REG_MMX7 => X64Reg::X87(X87Reg::Fpr(7)),
+            let operand_name: xed_operand_enum_t = xed_operand_name(xed_inst_operand(xi, i));
+            match operand_name {
+                XED_OPERAND_REG0 | XED_OPERAND_REG1 | XED_OPERAND_REG2 | XED_OPERAND_REG3 | XED_OPERAND_REG4 | XED_OPERAND_REG5 | XED_OPERAND_REG6 | XED_OPERAND_REG7 => {
+                    let reg = match xed_decoded_inst_get_reg(&self.inst, operand_name) {
+                        XED_REG_MMX0 => X64Reg::X87(X87Reg::Fpr(0)),
+                        XED_REG_MMX1 => X64Reg::X87(X87Reg::Fpr(1)),
+                        XED_REG_MMX2 => X64Reg::X87(X87Reg::Fpr(2)),
+                        XED_REG_MMX3 => X64Reg::X87(X87Reg::Fpr(3)),
+                        XED_REG_MMX4 => X64Reg::X87(X87Reg::Fpr(4)),
+                        XED_REG_MMX5 => X64Reg::X87(X87Reg::Fpr(5)),
+                        XED_REG_MMX6 => X64Reg::X87(X87Reg::Fpr(6)),
+                        XED_REG_MMX7 => X64Reg::X87(X87Reg::Fpr(7)),
+                        _ => continue,
+                    };
+                    operands.push(InstrOperand::Reg(reg));
+                },
+                XED_OPERAND_IMM0 => {
+                    if xed_decoded_inst_get_immediate_is_signed(&self.inst) != 0 {
+                        let imm = xed_decoded_inst_get_signed_immediate(&self.inst);
+                        operands.push(InstrOperand::ImmSigned(imm));
+                    } else {
+                        let imm = xed_decoded_inst_get_unsigned_immediate(&self.inst);
+                        operands.push(InstrOperand::ImmUnsigned(imm));
+                    }
+                }
                 _ => continue,
-            };
-            operands.push(reg);
+            }
         }
         operands
     }
