@@ -1,6 +1,6 @@
 use crate::diff_types::{Diff, DiffResult};
 use crate::state_diff::{DifferenceType, OkMismatch};
-use liblisa::arch::{CpuState, x64::{GpReg, X64Arch, X64Flag}};
+use liblisa::arch::{CpuState, x64::{GpReg, X64Arch, X64Flag, X64Reg, X87Reg}};
 use liblisa::state::SystemState;
 use thiserror::Error;
 use xed_sys::*;
@@ -13,6 +13,12 @@ pub enum ExplainedMismatch {
     AfNotImplemented,
     /// using MMX instructions resets X87 stack (top-of-stack and tag-word), which is not done in Ghidra
     X87ResetOnMMX,
+    /// in Ghidra's implementation for `PMINSW` and similar functions: `local srcCopy:8 = mmxreg2_m64;`
+    /// => reuses lower 8/16 bits for entire calculation, not just the lower 8/16 bits of the result
+    /// example: 0fde17 -r FTW=ff -r RDI=12345678 -m 12345678=20 -r mm2=00
+    ///   CPU: mm2=0x00000000000000000020 ; Ghidra: mm2=0x00002020202020202020
+    /// TODO: more research on why this actually happens?
+    PMaxMinSrcCopy,
 }
 
 impl ExplainedMismatch {
@@ -27,6 +33,9 @@ impl ExplainedMismatch {
             ExplainedMismatch::X87ResetOnMMX => {
                 "X87 stack reset on MMX instruction is not implemented".to_string()
             }
+            ExplainedMismatch::PMaxMinSrcCopy => {
+                "Ghidra's implementation of PMAX/PMIN instructions reuses lower bits of source for entire calculation".to_string()
+            }
         }
     }
     pub fn name(&self) -> String {
@@ -34,6 +43,7 @@ impl ExplainedMismatch {
             ExplainedMismatch::UndefinedFlag(_, _) => "UndefinedFlag".to_string(),
             ExplainedMismatch::AfNotImplemented => "AfNotImplemented".to_string(),
             ExplainedMismatch::X87ResetOnMMX => "X87ResetOnMMX".to_string(),
+            ExplainedMismatch::PMaxMinSrcCopy => "PMaxMinSrcCopy".to_string(),
         }
     }
 }
@@ -132,6 +142,16 @@ unsafe fn try_explain_mismatch(mismatch: &OkMismatch, state: &SystemState<X64Arc
             }
             None
         }
+        X87RegMismatch(reg, ghidra, vm) => {
+            let xed = get_xed_interface(state).expect("failed to get xed interface");
+            let iclass = xed.get_iclass();
+            if ["PMAXSW", "PMAXUB", "PMINSW", "PMINUB"].contains(&iclass.as_str()) {
+                if xed.get_operands_mm().get(0) == Some(&X64Reg::X87(*reg)) {
+                    return Some(ExplainedMismatch::PMaxMinSrcCopy);
+                }
+            }
+            None
+        }
         _ => None,
     }
 }
@@ -201,5 +221,28 @@ impl XedInterface {
             flags.push(X64Flag::Of);
         }
         flags
+    }
+
+    // note: this function is very specific to the current use case
+    // and might be generalized in the future
+    pub unsafe fn get_operands_mm(&self) -> Vec<X64Reg> {
+        let xi = xed_decoded_inst_inst(&self.inst);
+        let mut operands = Vec::new();
+        for i in 0..xed_inst_noperands(xi) {
+            let operand_name = xed_operand_name(xed_inst_operand(xi, i));
+            let reg = match xed_decoded_inst_get_reg(&self.inst, operand_name) {
+                XED_REG_MMX0 => X64Reg::X87(X87Reg::Fpr(0)),
+                XED_REG_MMX1 => X64Reg::X87(X87Reg::Fpr(1)),
+                XED_REG_MMX2 => X64Reg::X87(X87Reg::Fpr(2)),
+                XED_REG_MMX3 => X64Reg::X87(X87Reg::Fpr(3)),
+                XED_REG_MMX4 => X64Reg::X87(X87Reg::Fpr(4)),
+                XED_REG_MMX5 => X64Reg::X87(X87Reg::Fpr(5)),
+                XED_REG_MMX6 => X64Reg::X87(X87Reg::Fpr(6)),
+                XED_REG_MMX7 => X64Reg::X87(X87Reg::Fpr(7)),
+                _ => continue,
+            };
+            operands.push(reg);
+        }
+        operands
     }
 }
