@@ -7,8 +7,12 @@ use xed_sys::*;
 
 #[derive(Debug)]
 pub enum ExplainedMismatch {
+    /// flag is undefined as per intel manual/XED, CPUs/Ghidra might implement it differently
     UndefinedFlag(String, X64Flag),  // (instruction, flag)
+    /// AF flag is not handled in Ghidra properly
     AfNotImplemented,
+    /// using MMX instructions resets X87 stack (top-of-stack and tag-word), which is not done in Ghidra
+    X87ResetOnMMX,
 }
 
 impl ExplainedMismatch {
@@ -20,12 +24,16 @@ impl ExplainedMismatch {
             ExplainedMismatch::AfNotImplemented => {
                 "AF flag mismatch is not implemented".to_string()
             }
+            ExplainedMismatch::X87ResetOnMMX => {
+                "X87 stack reset on MMX instruction is not implemented".to_string()
+            }
         }
     }
     pub fn name(&self) -> String {
         match self {
             ExplainedMismatch::UndefinedFlag(_, _) => "UndefinedFlag".to_string(),
             ExplainedMismatch::AfNotImplemented => "AfNotImplemented".to_string(),
+            ExplainedMismatch::X87ResetOnMMX => "X87ResetOnMMX".to_string(),
         }
     }
 }
@@ -113,41 +121,21 @@ unsafe fn try_explain_mismatch(mismatch: &OkMismatch, state: &SystemState<X64Arc
             }
             None
         }
+        X87TopOfStackMismatch(ghidra, vm) => {
+            if *ghidra == state.cpu.x87.top_of_stack && *vm == 0 {
+                return Some(ExplainedMismatch::X87ResetOnMMX);
+            }
+            None
+        }
+        X87TagWordMismatch(ghidra, vm) => {
+            if *ghidra == state.cpu.x87.tag_word && *vm == 0 {
+                return Some(ExplainedMismatch::X87ResetOnMMX);
+            }
+            None
+        }
         _ => None,
     }
 }
-
-/*pub unsafe fn postprocess_diff(item_index: usize, diff_index: usize, diff: &Difference) -> Result<(), XedError> {
-    let pc = CpuState::<X64Arch>::gpreg(diff.example_before.cpu(), GpReg::Rip);
-    let instruction = diff.example_before.memory().iter().find_map(|(addr, _, data)| {
-        let offset = pc.checked_sub(addr.as_u64())?;
-        if (offset as usize) < data.len() {
-            Some(&data[offset as usize..])
-        } else {
-            None
-        }
-    }).unwrap_or(&[]);
-
-    let xed = XedInterface::new(instruction)?;
-
-    let OkOk(mismatches) = &diff.diff_type else {
-        return Ok(());
-    };
-
-    let iclass = xed.get_iclass();
-    println!("[{}-{}] = {:?} is {:?}", item_index, diff_index, instruction, iclass);
-
-    let rflags_info = xed_decoded_inst_get_rflags_info(xedd.as_ptr());
-    println!("[{}-{}] = {:?} is {:?}, rflags info: {:?}", i, j, instruction, iclass_str, rflags_info);
-    let undef_flags = xed_simple_flag_get_undefined_flag_set(rflags_info);
-    println!("[{}-{}] = {:?} is {:?}, undefined flags: {:?}", i, j, instruction, iclass_str, undef_flags);
-    let buf = &mut [0i8; 500];
-    xed_flag_set_print(undef_flags, buf.as_mut_ptr(), buf.len() as i32);
-    println!("Done, attempting to print");
-    println!("[{}-{}] = {:?} is {:?}, undefined flags: {}", i, j, instruction, iclass_str, std::ffi::CStr::from_ptr(buf.as_ptr()).to_string_lossy());
-
-    Ok(())
-}*/
 
 #[derive(Error, Debug)]
 enum XedError {
