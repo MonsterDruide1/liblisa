@@ -17,7 +17,8 @@ pub enum ExplainedMismatch {
     /// => reuses lower 8/16 bits for entire calculation, not just the lower 8/16 bits of the result
     /// example: 0fde17 -r FTW=ff -r RDI=12345678 -m 12345678=20 -r mm2=00
     ///   CPU: mm2=0x00000000000000000020 ; Ghidra: mm2=0x00002020202020202020
-    /// TODO: more research on why this actually happens?
+    /// same for `PUNPCKLBW` and `PUNPCKLWD`
+    /// TODO: more research on why this actually happens? Find other examples with `local x:Y` followed by `x[?]`?
     PMaxMinSrcCopy,
 }
 
@@ -145,7 +146,7 @@ unsafe fn try_explain_mismatch(mismatch: &OkMismatch, state: &SystemState<X64Arc
         X87RegMismatch(reg, ghidra, vm) => {
             let xed = get_xed_interface(state).expect("failed to get xed interface");
             let iclass = xed.get_iclass();
-            if ["PMAXSW", "PMAXUB", "PMINSW", "PMINUB"].contains(&iclass.as_str()) {
+            if ["PMAXSW", "PMAXUB", "PMINSW", "PMINUB", "PUNPCKLBW", "PUNPCKLWD"].contains(&iclass.as_str()) {
                 if xed.get_operands_mm().get(0) == Some(&X64Reg::X87(*reg)) {
                     return Some(ExplainedMismatch::PMaxMinSrcCopy);
                 }
