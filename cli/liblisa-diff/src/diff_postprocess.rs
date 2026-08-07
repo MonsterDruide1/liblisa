@@ -127,7 +127,7 @@ unsafe fn try_explain_mismatch(mismatch: &OkMismatch, state: &SystemState<X64Arc
             None
         }
         X87TagWordMismatch(ghidra, vm) => {
-            if *ghidra == state.cpu.x87.tag_word && *vm == 0 {
+            if *ghidra == state.cpu.x87.tag_word && *vm == 0xff {
                 return Some(ExplainedMismatch::X87ResetOnMMX);
             }
             None
