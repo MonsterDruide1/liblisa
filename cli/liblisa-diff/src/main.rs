@@ -10,6 +10,7 @@ pub mod dummy_oracle_source;
 pub mod diff_work;
 pub mod diff;
 pub mod diff_types;
+pub mod diff_postprocess;
 
 #[derive(clap::Parser)]
 enum CliCommand {

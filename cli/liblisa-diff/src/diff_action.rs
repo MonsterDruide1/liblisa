@@ -1,11 +1,11 @@
-use std::{error::Error, fs::{self, File}, io::BufReader, path::PathBuf, sync::{Mutex, atomic::{AtomicBool, Ordering}, mpsc::{RecvTimeoutError, channel}}, thread::{scope, spawn}, time::{Duration, Instant}};
+use std::{collections::HashMap, error::Error, fs::{self, File}, io::BufReader, mem, path::PathBuf, sync::{Mutex, atomic::{AtomicBool, Ordering}, mpsc::{RecvTimeoutError, channel}}, thread::{scope, spawn}, time::{Duration, Instant}};
 
 use liblisa::{arch::x64::X64Arch, oracle::Oracle};
 use liblisa::encoding::Encoding;
 use liblisa::semantics::default::computation::SynthesizedComputation;
 use liblisa_libcli::{clear_screen, threadpool::ThreadPool};
 
-use crate::{diff::create_state, diff_types::DiffItem};
+use crate::{diff::create_state, diff_postprocess::postprocess, diff_types::DiffItem};
 use crate::diff_types::{Diff, DiffError, DiffRuntimeData};
 use crate::state_diff;
 use crate::dummy_oracle_source;
@@ -42,6 +42,7 @@ enum Verb {
     Dump {
         result: ResultType,
     },
+    PostprocessMismatches,
     DiscardResults {
         result: ResultType,
     },
@@ -242,6 +243,28 @@ impl DiffCommand {
                         _ => {},
                     }
                 }
+            }
+            Verb::PostprocessMismatches => {
+                println!("Loading base data...");
+                let file = File::open(self.state_path()).unwrap();
+                let diff: Diff = serde_json::from_reader(file).unwrap();
+                unsafe {
+                    let (explained, unexplained) = postprocess(&diff);
+                    let mut counts = HashMap::new();
+                    for explain in &explained {
+                        *counts.entry(explain.name()).or_insert(0) += 1;
+                    }
+                    println!("Explained mismatches: {}", explained.len());
+                    for (explain_type, count) in counts {
+                        println!("  {:?}: {}", explain_type, count);
+                    }
+                    println!("Unexplained mismatches: {}", unexplained.len());
+                    for item in unexplained {
+                        let instr = item.instr.iter().map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join("");
+                        println!("  [{}-{}]: {} = {} => {:?}", item.item_index, item.diff_index, instr, item.iclass, item.diff_type);
+                    }
+                }
+                
             }
             Verb::DiscardResults { result } => {
                 println!("Loading base data...");
