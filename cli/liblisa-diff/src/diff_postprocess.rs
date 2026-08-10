@@ -13,13 +13,6 @@ pub enum ExplainedMismatch {
     AfNotImplemented,
     /// using MMX instructions resets X87 stack (top-of-stack and tag-word), which is not done in Ghidra
     X87ResetOnMMX,
-    /// in Ghidra's implementation for `PMINSW` and similar functions: `local srcCopy:8 = mmxreg2_m64;`
-    /// => reuses lower 8/16 bits for entire calculation, not just the lower 8/16 bits of the result
-    /// example: 0fde17 -r FTW=ff -r RDI=12345678 -m 12345678=20 -r mm2=00
-    ///   CPU: mm2=0x00000000000000000020 ; Ghidra: mm2=0x00002020202020202020
-    /// same for `PUNPCKLBW` and `PUNPCKLWD`
-    /// TODO: more research on why this actually happens? Find other examples with `local x:Y` followed by `x[?]`?
-    PMaxMinSrcCopy,
     /// in Ghidra: SHR contains hardcoded `OF = 0`, while specification says
     /// > For the SHR instruction, the OF flag is set to the most-significant bit of the original operand.
     /// > The OF flag is affected only for 1-bit shifts [...]; otherwise, it is undefined.
@@ -39,9 +32,6 @@ impl ExplainedMismatch {
             ExplainedMismatch::X87ResetOnMMX => {
                 "X87 stack reset on MMX instruction is not implemented".to_string()
             }
-            ExplainedMismatch::PMaxMinSrcCopy => {
-                "Ghidra's implementation of PMAX/PMIN instructions reuses lower bits of source for entire calculation".to_string()
-            }
             ExplainedMismatch::SHR1OF => {
                 "Ghidra's implementation of SHR instruction sets OF=0 for 1-bit shifts, while specification says it should be the most-significant bit of the original operand".to_string()
             }
@@ -52,7 +42,6 @@ impl ExplainedMismatch {
             ExplainedMismatch::UndefinedFlag(_, _) => "UndefinedFlag".to_string(),
             ExplainedMismatch::AfNotImplemented => "AfNotImplemented".to_string(),
             ExplainedMismatch::X87ResetOnMMX => "X87ResetOnMMX".to_string(),
-            ExplainedMismatch::PMaxMinSrcCopy => "PMaxMinSrcCopy".to_string(),
             ExplainedMismatch::SHR1OF => "SHR1OF".to_string(),
         }
     }
@@ -152,16 +141,6 @@ unsafe fn try_explain_mismatch(mismatch: &OkMismatch, state: &SystemState<X64Arc
         X87TagWordMismatch(ghidra, vm) => {
             if *ghidra == state.cpu.x87.tag_word && *vm == 0xff {
                 return Some(ExplainedMismatch::X87ResetOnMMX);
-            }
-            None
-        }
-        X87RegMismatch(reg, ghidra, vm) => {
-            let xed = get_xed_interface(state).expect("failed to get xed interface");
-            let iclass = xed.get_iclass();
-            if ["PMAXSW", "PMAXUB", "PMINSW", "PMINUB", "PUNPCKLBW", "PUNPCKLWD"].contains(&iclass.as_str()) {
-                if xed.get_operands().get(0) == Some(&InstrOperand::Reg(X64Reg::X87(*reg))) {
-                    return Some(ExplainedMismatch::PMaxMinSrcCopy);
-                }
             }
             None
         }
