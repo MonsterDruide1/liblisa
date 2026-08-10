@@ -299,16 +299,13 @@ impl DiffCommand {
                 let mut diff: Diff = serde_json::from_reader(file).unwrap();
 
                 println!("Filtering...");
-                diff.items.retain_mut(|item| {
-                    let Some(res) = &mut item.result else {
+                diff.items.retain(|item| {
+                    let Some(res) = &item.result else {
                         return false;
                     };
-                    match &mut res.diffs {
+                    match &res.diffs {
                         Ok(diffs) if diffs.is_empty() && *result == ResultType::OK => true,
-                        Ok(diffs) if !diffs.is_empty() && *result == ResultType::Mismatch => {
-                            diffs.drain(2..diffs.len());
-                            true
-                        }
+                        Ok(diffs) if !diffs.is_empty() && *result == ResultType::Mismatch => true,
                         Err(e) if *result == ResultType::Failure => true,
                         _ => false,
                     }
