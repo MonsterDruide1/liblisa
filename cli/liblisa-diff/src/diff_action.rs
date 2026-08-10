@@ -300,7 +300,7 @@ impl DiffCommand {
 
                 println!("Filtering...");
                 diff.items.retain(|item| {
-                    let Some(res) = item.result else {
+                    let Some(res) = &item.result else {
                         return false;
                     };
                     match &res.diffs {
