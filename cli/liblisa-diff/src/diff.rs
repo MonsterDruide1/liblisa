@@ -28,6 +28,8 @@ fn translate_ghidra_error(e: &OracleError) -> Option<DiffError> {
         Some(DiffError::GhidraCustomPcodeOp)
     } else if e.contains("Ghidra emulator reported varnode too large") {
         Some(DiffError::GhidraVarnodeTooLarge)
+    } else if e.contains("Ghidra emulator reported emulation unimplemented") {
+        Some(DiffError::GhidraEmulationUnimplemented)
     } else {
         None
     }
