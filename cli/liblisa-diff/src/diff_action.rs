@@ -42,6 +42,10 @@ enum Verb {
     Dump {
         result: ResultType,
     },
+    Export {
+        result: ResultType,
+        target: PathBuf,
+    },
     PostprocessMismatches,
     DiscardResults {
         result: ResultType,
@@ -264,7 +268,6 @@ impl DiffCommand {
                         println!("  [{}-{}]: {} = {} => {:?}", item.item_index, item.diff_index, instr, item.iclass, item.diff_type);
                     }
                 }
-                
             }
             Verb::DiscardResults { result } => {
                 println!("Loading base data...");
@@ -288,6 +291,31 @@ impl DiffCommand {
                 }
 
                 let file = File::create(self.state_path()).unwrap();
+                serde_json::to_writer(file, &diff).unwrap();
+            }
+            Verb::Export { result, target } => {
+                println!("Loading base data...");
+                let file = File::open(self.state_path()).unwrap();
+                let mut diff: Diff = serde_json::from_reader(file).unwrap();
+
+                println!("Filtering...");
+                diff.items.retain(|item| {
+                    let Some(res) = r else {
+                        return false;
+                    };
+                    match &res.diffs {
+                        Ok(diffs) if diffs.is_empty() && *result == ResultType::OK => true,
+                        Ok(diffs) if !diffs.is_empty() && *result == ResultType::Mismatch => true,
+                        Err(e) if *result == ResultType::Failure => true,
+                        _ => false,
+                    }
+                });
+                for item in &mut diff.items {
+                    item.instructions = vec![];
+                }
+
+                println!("Exporting {} items...", diff.items.len());
+                let file = File::create(target).unwrap();
                 serde_json::to_writer(file, &diff).unwrap();
             }
             Verb::TestDiff { todo_index, diff_index } => {
