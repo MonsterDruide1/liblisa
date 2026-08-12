@@ -29,6 +29,17 @@ impl CliCommand {
                 println!("Running instruction...");
                 println!("{:?}", run_instr(&instr, diff_types::NUM_STATES_PER_INSTR, &mut state));
                 println!("Observed diffs: {:?}", state.diffs);
+                println!("Postprocessing diffs...");
+                unsafe {
+                    let (explained, unexplained) = diff_postprocess::postprocess(
+                        &diff_types::Diff { items: vec![diff_types::DiffItem {
+                            instructions: vec![], description: "<missing>".to_string(),
+                            result: Some(diff_types::DiffResult {diffs: Ok(state.diffs)})
+                        }], runtime_ms: 0, total_ms: 0 },
+                    );
+                    println!("Explained diffs: {:?}", explained);
+                    println!("Unexplained diffs: {:?}", unexplained);
+                }
             }
         }
     }
