@@ -139,8 +139,8 @@ fn get_mapped_memory(state: &SystemState<X64Arch>, addr: u64, size: usize) -> Op
     while current_addr != end_addr {
         let Some((page_addr, _, page_data)) = state.memory().iter().find(|(page_addr, _, page_data)| {
             let page_start = page_addr.as_u64();
-            let page_end = page_start.wrapping_add(page_data.len() as u64);
-            current_addr >= page_start && current_addr < page_end
+            let page_end = page_start.checked_add((page_data.len()-1) as u64).unwrap();
+            current_addr >= page_start && current_addr <= page_end
         }) else {
             error!("Address 0x{:x} is not mapped in memory", current_addr);
             error!("Mappings: {:?}", state.memory());
