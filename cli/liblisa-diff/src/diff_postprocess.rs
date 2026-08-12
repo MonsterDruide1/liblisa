@@ -28,6 +28,11 @@ pub enum ExplainedMismatch {
     /// => -m 00=0100000000 : expected: 0x0A09100E0C0A08060402, got 0x0A090807060508060402
     /// Note: PSLLW is not implemented (`define pcodeop psllw`), so doesn't have the same problem
     PSLLDQShiftIndependent,
+    /// in Ghidra: PINSRW with mmx register uses more than the two least-significant bits to determine the target
+    /// Ghidra: `local destIndex:1 = (imm8 & 0x7) * 16:1;`
+    /// Spec: `When specifying a word location in an MMX technology register, the 2 least-significant bits of the count operand specify the location;`
+    /// Note: other variants of PINSR[.] as well as PINSRW with XMM register are implemented correctly
+    PINSRWMMXImmTooLarge,
 }
 
 impl ExplainedMismatch {
@@ -51,6 +56,9 @@ impl ExplainedMismatch {
             ExplainedMismatch::PSLLDQShiftIndependent => {
                 "Ghidra's implementation of PSLL[D,Q] shifts every part of the register by an independent count, while it should actually be one common count across all of them".to_string()
             }
+            ExplainedMismatch::PINSRWMMXImmTooLarge => {
+                "Ghidra's implementation of PINSRW with MMX register uses more than the two least-significant bits to determine the target".to_string()
+            }
         }
     }
     pub fn name(&self) -> String {
@@ -61,6 +69,7 @@ impl ExplainedMismatch {
             ExplainedMismatch::X87ResetOnMMX => "X87ResetOnMMX".to_string(),
             ExplainedMismatch::SHR1OF => "SHR1OF".to_string(),
             ExplainedMismatch::PSLLDQShiftIndependent => "PSLLDQShiftIndependent".to_string(),
+            ExplainedMismatch::PINSRWMMXImmTooLarge => "PINSRWMMXImmTooLarge".to_string(),
         }
     }
 }
@@ -156,7 +165,7 @@ fn get_mapped_memory(state: &SystemState<X64Arch>, addr: u64, size: usize) -> Op
     Some(data)
 }
 fn get_mem_operand(state: &SystemState<X64Arch>, mem_operand: &InstrOperand) -> Option<Vec<u8>> {
-    let InstrOperand::Mem { access, seg, base, index, scale, disp, width } = mem_operand else {
+    let InstrOperand::Mem { seg, base, index, scale, disp, width, .. } = mem_operand else {
         return None;
     };
     if seg.is_some() {
@@ -212,7 +221,7 @@ unsafe fn try_explain_mismatch(mismatch: &OkMismatch, state: &SystemState<X64Arc
             }
             None
         }
-        RegMismatch(reg, ghidra, vm) => {
+        RegMismatch(reg, _, _) => {
             let xed = get_xed_interface(state).expect("failed to get xed interface");
             let ops = xed.get_operands();
 
@@ -243,6 +252,14 @@ unsafe fn try_explain_mismatch(mismatch: &OkMismatch, state: &SystemState<X64Arc
             }
             if is_target_reg && ["PSLLD", "PSLLQ"].contains(&xed.get_iclass().as_str()) {
                 return Some(ExplainedMismatch::PSLLDQShiftIndependent);
+            }
+            if is_target_reg && xed.get_iclass() == "PINSRW" && ops.get(2).is_some_and(|x| {
+                let InstrOperand::ImmUnsigned(imm) = x else { return false; };
+                (imm & 0x4) != 0
+                // lowest two bits are considered correctly, but Ghidra includes third bit as well
+                // => only wrong if the third bit is set
+            }) {
+                return Some(ExplainedMismatch::PINSRWMMXImmTooLarge);
             }
             None
         }
@@ -348,18 +365,18 @@ impl XedInterface {
         let mut operands = Vec::new();
         for i in 0..xed_inst_noperands(xi) {
             let operand_name: xed_operand_enum_t = xed_operand_name(xed_inst_operand(xi, i));
-            match operand_name {
+            let operand = match operand_name {
                 XED_OPERAND_REG0 | XED_OPERAND_REG1 | XED_OPERAND_REG2 | XED_OPERAND_REG3 | XED_OPERAND_REG4 | XED_OPERAND_REG5 | XED_OPERAND_REG6 | XED_OPERAND_REG7 => {
                     let reg = Self::xed_reg_to_x64reg(xed_decoded_inst_get_reg(&self.inst, operand_name));
-                    operands.push(InstrOperand::Reg(reg));
+                    InstrOperand::Reg(reg)
                 },
                 XED_OPERAND_IMM0 => {
                     if xed_decoded_inst_get_immediate_is_signed(&self.inst) != 0 {
                         let imm = xed_decoded_inst_get_signed_immediate(&self.inst);
-                        operands.push(InstrOperand::ImmSigned(imm));
+                        InstrOperand::ImmSigned(imm)
                     } else {
                         let imm = xed_decoded_inst_get_unsigned_immediate(&self.inst);
-                        operands.push(InstrOperand::ImmUnsigned(imm));
+                        InstrOperand::ImmUnsigned(imm)
                     }
                 },
                 XED_OPERAND_MEM0 | XED_OPERAND_MEM1 => {
@@ -387,10 +404,11 @@ impl XedInterface {
                     } else { None };
                     let width = xed_decoded_inst_get_memory_operand_length(&self.inst,mem_idx);
 
-                    operands.push(InstrOperand::Mem { access, seg, base, index, scale, disp, width });
+                    InstrOperand::Mem { access, seg, base, index, scale, disp, width }
                 },
-                _ => continue,
-            }
+                _ => InstrOperand::Unk,
+            };
+            operands.push(operand);
         }
         operands
     }
