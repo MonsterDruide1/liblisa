@@ -881,6 +881,7 @@ dependencies = [
 name = "liblisa-diff"
 version = "0.1.0"
 dependencies = [
+ "bitflags 2.13.1",
  "clap",
  "env_logger 0.10.2",
  "liblisa",
