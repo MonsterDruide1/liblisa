@@ -1,6 +1,6 @@
 use crate::diff_types::{Diff, DiffResult};
 use crate::state_diff::{DifferenceType, OkMismatch};
-use liblisa::arch::{CpuState, x64::{GpReg, X64Arch, X64Flag, X64Reg, X87Reg}};
+use liblisa::arch::{CpuState, x64::{GpReg, X64Arch, X64Flag, X64Reg, X87Reg, XmmReg}};
 use liblisa::state::SystemState;
 use thiserror::Error;
 use xed_sys::*;
@@ -412,6 +412,7 @@ impl XedInterface {
             XED_REG_GSBASE => Some(X64Reg::GpReg(GpReg::GsBase)),
             XED_REG_RFLAGS => Some(X64Reg::GpReg(GpReg::RFlags)),
             // Riz doesn't exist in XED
+
             XED_REG_MMX0 => Some(X64Reg::X87(X87Reg::Fpr(0))),
             XED_REG_MMX1 => Some(X64Reg::X87(X87Reg::Fpr(1))),
             XED_REG_MMX2 => Some(X64Reg::X87(X87Reg::Fpr(2))),
@@ -420,6 +421,23 @@ impl XedInterface {
             XED_REG_MMX5 => Some(X64Reg::X87(X87Reg::Fpr(5))),
             XED_REG_MMX6 => Some(X64Reg::X87(X87Reg::Fpr(6))),
             XED_REG_MMX7 => Some(X64Reg::X87(X87Reg::Fpr(7))),
+
+            XED_REG_XMM0 => Some(X64Reg::Xmm(XmmReg::Reg(0))),
+            XED_REG_XMM1 => Some(X64Reg::Xmm(XmmReg::Reg(1))),
+            XED_REG_XMM2 => Some(X64Reg::Xmm(XmmReg::Reg(2))),
+            XED_REG_XMM3 => Some(X64Reg::Xmm(XmmReg::Reg(3))),
+            XED_REG_XMM4 => Some(X64Reg::Xmm(XmmReg::Reg(4))),
+            XED_REG_XMM5 => Some(X64Reg::Xmm(XmmReg::Reg(5))),
+            XED_REG_XMM6 => Some(X64Reg::Xmm(XmmReg::Reg(6))),
+            XED_REG_XMM7 => Some(X64Reg::Xmm(XmmReg::Reg(7))),
+            XED_REG_XMM8 => Some(X64Reg::Xmm(XmmReg::Reg(8))),
+            XED_REG_XMM9 => Some(X64Reg::Xmm(XmmReg::Reg(9))),
+            XED_REG_XMM10 => Some(X64Reg::Xmm(XmmReg::Reg(10))),
+            XED_REG_XMM11 => Some(X64Reg::Xmm(XmmReg::Reg(11))),
+            XED_REG_XMM12 => Some(X64Reg::Xmm(XmmReg::Reg(12))),
+            XED_REG_XMM13 => Some(X64Reg::Xmm(XmmReg::Reg(13))),
+            XED_REG_XMM14 => Some(X64Reg::Xmm(XmmReg::Reg(14))),
+            XED_REG_XMM15 => Some(X64Reg::Xmm(XmmReg::Reg(15))),
 
             XED_REG_INVALID => None,
             _ => {
