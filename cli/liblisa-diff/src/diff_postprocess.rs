@@ -445,6 +445,14 @@ impl XedInterface {
             XED_REG_XMM14 => Some(X64Reg::Xmm(XmmReg::Reg(14))),
             XED_REG_XMM15 => Some(X64Reg::Xmm(XmmReg::Reg(15))),
 
+            // known to be missing in liblisa, add them here to silence `error!` below
+            XED_REG_ES => None,
+            XED_REG_CS => None,
+            XED_REG_SS => None,
+            XED_REG_DS => None,
+            XED_REG_FS => None,
+            XED_REG_GS => None,
+
             XED_REG_INVALID => None,
             _ => {
                 error!("XED register {:?} not mapped to X64Reg", reg);
