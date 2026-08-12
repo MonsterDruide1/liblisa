@@ -216,7 +216,7 @@ unsafe fn try_explain_mismatch(mismatch: &OkMismatch, state: &SystemState<X64Arc
             let xed = get_xed_interface(state).expect("failed to get xed interface");
             let ops = xed.get_operands();
 
-            let is_target_reg = ops.get(0) == Some(&InstrOperand::Reg(X64Reg::GpReg(*reg)));
+            let is_target_reg = ops.get(0) == Some(&InstrOperand::Reg(Some(X64Reg::GpReg(*reg))));
             let is_source_mem_0 = ops.get(1).is_some_and(|mem| {
                 match &mem {
                     InstrOperand::Mem { access, .. } => {
@@ -234,7 +234,7 @@ unsafe fn try_explain_mismatch(mismatch: &OkMismatch, state: &SystemState<X64Arc
             let xed = get_xed_interface(state).expect("failed to get xed interface");
             let ops = xed.get_operands();
 
-            let is_target_reg = ops.get(0) == Some(&InstrOperand::Reg(X64Reg::X87(*reg)));
+            let is_target_reg = ops.get(0) == Some(&InstrOperand::Reg(Some(X64Reg::X87(*reg))));
             if is_target_reg && ["PSLLD", "PSLLQ"].contains(&xed.get_iclass().as_str()) {
                 return Some(ExplainedMismatch::PSLLDQShiftIndependent);
             }
@@ -256,7 +256,7 @@ struct XedInterface {
 
 #[derive(Debug, Clone, PartialEq)]
 enum InstrOperand {
-    Reg(X64Reg),
+    Reg(Option<X64Reg>),
     Mem {
         access: MemAccess,
         seg: Option<GpReg>,
@@ -344,7 +344,7 @@ impl XedInterface {
             let operand_name: xed_operand_enum_t = xed_operand_name(xed_inst_operand(xi, i));
             match operand_name {
                 XED_OPERAND_REG0 | XED_OPERAND_REG1 | XED_OPERAND_REG2 | XED_OPERAND_REG3 | XED_OPERAND_REG4 | XED_OPERAND_REG5 | XED_OPERAND_REG6 | XED_OPERAND_REG7 => {
-                    let reg = Self::xed_reg_to_x64reg(xed_decoded_inst_get_reg(&self.inst, operand_name)).unwrap();
+                    let reg = Self::xed_reg_to_x64reg(xed_decoded_inst_get_reg(&self.inst, operand_name));
                     operands.push(InstrOperand::Reg(reg));
                 },
                 XED_OPERAND_IMM0 => {
