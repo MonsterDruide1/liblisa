@@ -21,6 +21,13 @@ pub enum ExplainedMismatch {
     /// > The OF flag is affected only for 1-bit shifts [...]; otherwise, it is undefined.
     /// => already caught as undefined for non-1-bit shifts, so explicitly handle 1-bit shifts here
     SHR1OF,
+    /// in Ghidra: PSLL[D,Q] shifts every part of the register by an independent count, while it should actually
+    /// be one common count across all of them
+    /// Example: 0ff26b00 -r RBX=00 -r mm5=0102030405060708090a
+    /// => -m 00=0100000001 : expected: 0x0A090000000000000000, got 0x0A09100E0C0A08060402
+    /// => -m 00=0100000000 : expected: 0x0A09100E0C0A08060402, got 0x0A090807060508060402
+    /// Note: PSLLW is not implemented (`define pcodeop psllw`), so doesn't have the same problem
+    PSLLDQShiftIndependent,
 }
 
 impl ExplainedMismatch {
@@ -41,6 +48,9 @@ impl ExplainedMismatch {
             ExplainedMismatch::SHR1OF => {
                 "Ghidra's implementation of SHR instruction sets OF=0 for 1-bit shifts, while specification says it should be the most-significant bit of the original operand".to_string()
             }
+            ExplainedMismatch::PSLLDQShiftIndependent => {
+                "Ghidra's implementation of PSLL[D,Q] shifts every part of the register by an independent count, while it should actually be one common count across all of them".to_string()
+            }
         }
     }
     pub fn name(&self) -> String {
@@ -50,6 +60,7 @@ impl ExplainedMismatch {
             ExplainedMismatch::AfNotImplemented => "AfNotImplemented".to_string(),
             ExplainedMismatch::X87ResetOnMMX => "X87ResetOnMMX".to_string(),
             ExplainedMismatch::SHR1OF => "SHR1OF".to_string(),
+            ExplainedMismatch::PSLLDQShiftIndependent => "PSLLDQShiftIndependent".to_string(),
         }
     }
 }
@@ -216,6 +227,16 @@ unsafe fn try_explain_mismatch(mismatch: &OkMismatch, state: &SystemState<X64Arc
             });
             if is_target_reg && is_source_mem_0 && xed.get_iclass() == "BSF" {
                 return Some(ExplainedMismatch::UndefinedReg(xed.get_iclass()));
+            }
+            None
+        }
+        X87RegMismatch(reg, _, _) => {
+            let xed = get_xed_interface(state).expect("failed to get xed interface");
+            let ops = xed.get_operands();
+
+            let is_target_reg = ops.get(0) == Some(&InstrOperand::Reg(X64Reg::X87(*reg)));
+            if is_target_reg && ["PSLLD", "PSLLQ"].contains(&xed.get_iclass().as_str()) {
+                return Some(ExplainedMismatch::PSLLDQShiftIndependent);
             }
             None
         }
