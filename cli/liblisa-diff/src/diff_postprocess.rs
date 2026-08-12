@@ -238,7 +238,7 @@ unsafe fn try_explain_mismatch(mismatch: &OkMismatch, state: &SystemState<X64Arc
             let ops = xed.get_operands();
 
             let is_target_reg = ops.get(0) == Some(&InstrOperand::Reg(Some(X64Reg::X87(*reg))));
-            if is_target_reg && ghidra[9..] == state.cpu.x87.fpr[fpr_index as usize][9..] && vm[9..] == [0xff; 2] {
+            if is_target_reg && ghidra[8..] == state.cpu.x87.fpr[fpr_index as usize][8..] && vm[8..] == [0xff; 2] {
                 return Some(ExplainedMismatch::X87ResetOnMMX);
             }
             if is_target_reg && ["PSLLD", "PSLLQ"].contains(&xed.get_iclass().as_str()) {
