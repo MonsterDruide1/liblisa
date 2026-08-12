@@ -230,11 +230,17 @@ unsafe fn try_explain_mismatch(mismatch: &OkMismatch, state: &SystemState<X64Arc
             }
             None
         }
-        X87RegMismatch(reg, _, _) => {
+        X87RegMismatch(reg, ghidra, vm) => {
+            let X87Reg::Fpr(fpr_index) = *reg else {
+                panic!("Unexpected X87Reg variant: {:?}", reg);
+            };
             let xed = get_xed_interface(state).expect("failed to get xed interface");
             let ops = xed.get_operands();
 
             let is_target_reg = ops.get(0) == Some(&InstrOperand::Reg(Some(X64Reg::X87(*reg))));
+            if is_target_reg && ghidra[9..] == state.cpu.x87.fpr[fpr_index as usize][9..] && vm[9..] == [0xff; 2] {
+                return Some(ExplainedMismatch::X87ResetOnMMX);
+            }
             if is_target_reg && ["PSLLD", "PSLLQ"].contains(&xed.get_iclass().as_str()) {
                 return Some(ExplainedMismatch::PSLLDQShiftIndependent);
             }
