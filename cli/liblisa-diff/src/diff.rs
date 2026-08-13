@@ -193,6 +193,26 @@ fn run_instr_single(
             continue;
         }
 
+        // special case: page faults on CPU due to non-writable memory while Ghidra is fine might happen due to conditional write
+        // if conditional writes may happen, CPU throws page faults eagerly, even if write is not actually performed.
+        // While Intel does not specify this, AMD is explicit for CMPXCHG:
+        // > If the compared operands were unequal, CMPXCHG writes the same value to the memory operand that was read.
+        // https://www.sra.uni-hannover.de/Lehre/SS21/V_BSB/doc/amd64_manual_vol3.pdf
+        // => try mapping as writable and try again, if mapping cannot be added, randomize new state and try again
+        if let (Ok(_), Err(OracleError::MemoryAccess(addr))) = (&r1, &r2) {
+            let is_writable = before.memory().iter().any(|(mapped_addr, perms, data)| {
+                mapped_addr.into_area(data.len() as u64).contains(*addr) && *perms == Permissions::ReadWrite
+            });
+            if !is_writable {
+                debug!("CPU threw MemoryAccess on non-writable memory, while Ghidra was fine: {:?}, trying to add mapping and try again", addr);
+                if !try_add_memory_mapping(&mut before, *addr, &mut state.rng) {
+                    debug!("CPU threw MemoryAccess on non-writable memory, while Ghidra was fine: {:?}, but could not add mapping, randomizing new state and trying again", addr);
+                    before = state_gen.randomize_new(&mut state.rng)?;
+                }
+                continue;
+            }
+        }
+
         // if page fault occurred, try adding mapping and try again
         // if mapping cannot be added, randomize new state and try again
         if let Err(OracleError::MemoryAccess(addr)) = r1 {
