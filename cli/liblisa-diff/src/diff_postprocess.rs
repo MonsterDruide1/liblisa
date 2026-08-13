@@ -204,7 +204,7 @@ unsafe fn try_explain_mismatch(mismatch: &OkMismatch, state: &SystemState<X64Arc
             if *flag == X64Flag::Af {
                 return Some(ExplainedMismatch::AfNotImplemented);
             }
-            if *flag == X64Flag::Of && xed.get_iclass() == "SHR" && xed.get_operands().get(0) == Some(&InstrOperand::ImmUnsigned(1)) {
+            if *flag == X64Flag::Of && xed.get_iclass() == "SHR" && xed.get_operands().get(1) == Some(&InstrOperand::ImmUnsigned(1)) {
                 return Some(ExplainedMismatch::SHR1OF);
             }
             None
