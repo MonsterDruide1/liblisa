@@ -38,6 +38,10 @@ pub enum ExplainedMismatch {
     /// while Ghidra only cuts off the result to the resulting type
     /// happens for example on `0xffff / 0xf7`
     DivOutOfRange,
+    /// XADD has the following setup in Ghidra: `Reg8 = m8; m8 = tmp;`
+    /// when Reg8 and m8 use the same register, this will cause the second write to end up at a different location than intended
+    /// the result can be anything from ineffective writes, shifted results up to a page fault (=> unmapped new target)
+    XADDRegisterConflict,
 }
 
 impl ExplainedMismatch {
@@ -67,6 +71,9 @@ impl ExplainedMismatch {
             ExplainedMismatch::DivOutOfRange => {
                 "Division result is out-of-range of resulting type".to_string()
             }
+            ExplainedMismatch::XADDRegisterConflict => {
+                "Ghidra's implementation of XADD with register and memory operand using the same register can cause unexpected behavior".to_string()
+            }
         }
     }
     pub fn name(&self) -> String {
@@ -79,6 +86,7 @@ impl ExplainedMismatch {
             ExplainedMismatch::PSLLDQShiftIndependent => "PSLLDQShiftIndependent".to_string(),
             ExplainedMismatch::PINSRWMMXImmTooLarge => "PINSRWMMXImmTooLarge".to_string(),
             ExplainedMismatch::DivOutOfRange => "DivOutOfRange".to_string(),
+            ExplainedMismatch::XADDRegisterConflict => "XADDRegisterConflict".to_string(),
         }
     }
 }
@@ -115,6 +123,10 @@ pub unsafe fn postprocess(diff: &Diff) -> (Vec<ExplainedMismatch>, Vec<Unexplain
                     }
                 },
                 DifferenceType::OkErr(OracleError::ComputationError) => {
+                    if is_xadd_register_conflict(&diff.example_before, None) {
+                        explained.push(ExplainedMismatch::XADDRegisterConflict);
+                        continue;
+                    }
                     let xed = get_xed_interface(&diff.example_before).expect("failed to get xed interface");
                     if ["DIV", "IDIV"].contains(&xed.get_iclass().as_str()) {
                         explained.push(ExplainedMismatch::DivOutOfRange);
@@ -123,6 +135,10 @@ pub unsafe fn postprocess(diff: &Diff) -> (Vec<ExplainedMismatch>, Vec<Unexplain
                     }
                 },
                 _ => {
+                    if is_xadd_register_conflict(&diff.example_before, None) {
+                        explained.push(ExplainedMismatch::XADDRegisterConflict);
+                        continue;
+                    }
                     unexplained.push(build_unexplained(i, j, diff.diff_type.clone(), &diff.example_before));
                 }
             }
@@ -254,6 +270,9 @@ unsafe fn try_explain_mismatch(mismatch: &OkMismatch, state: &SystemState<X64Arc
             if is_target_reg && is_source_mem_0 && xed.get_iclass() == "BSF" {
                 return Some(ExplainedMismatch::UndefinedReg(xed.get_iclass()));
             }
+            if is_xadd_register_conflict(state, Some(reg)) {
+                return Some(ExplainedMismatch::XADDRegisterConflict);
+            }
             None
         }
         X87RegMismatch(reg, ghidra, vm) => {
@@ -280,8 +299,46 @@ unsafe fn try_explain_mismatch(mismatch: &OkMismatch, state: &SystemState<X64Arc
             }
             None
         }
+        MemoryMismatch(_, _, _) => {
+            if is_xadd_register_conflict(state, None) {
+                return Some(ExplainedMismatch::XADDRegisterConflict);
+            }
+            None
+        }
         _ => None,
     }
+}
+
+unsafe fn is_xadd_register_conflict(state: &SystemState<X64Arch>, mismatching_reg: Option<&GpReg>) -> bool {
+    let xed = get_xed_interface(state).expect("failed to get xed interface");
+    if xed.get_iclass() != "XADD" {
+        return false;
+    }
+    let ops = xed.get_operands();
+    let mem_operand = ops.get(0);
+    let reg_operand = ops.get(1);
+    let Some(InstrOperand::Mem{ seg, base, index, .. }) = mem_operand else {
+        error!("Unexpected first operand type for XADD: {:?}", mem_operand);
+        return false;
+    };
+    let Some(InstrOperand::Reg(Some(reg))) = reg_operand else {
+        error!("Unexpected second operand type for XADD: {:?}", reg_operand);
+        return false;
+    };
+    if mismatching_reg.is_some_and(|r| X64Reg::GpReg(*r) != *reg) {
+        return false;
+    }
+
+    if seg.is_some_and(|s| reg == &X64Reg::GpReg(s)) {
+        return true;
+    }
+    if base.is_some_and(|b| reg == &X64Reg::GpReg(b)) {
+        return true;
+    }
+    if index.is_some_and(|i| reg == &X64Reg::GpReg(i)) {
+        return true;
+    }
+    false
 }
 
 #[derive(Error, Debug)]
