@@ -116,7 +116,7 @@ pub unsafe fn postprocess(diff: &Diff) -> (Vec<ExplainedMismatch>, Vec<Unexplain
                 },
                 DifferenceType::OkErr(OracleError::ComputationError) => {
                     let xed = get_xed_interface(&diff.example_before).expect("failed to get xed interface");
-                    if xed.get_iclass() == "DIV" {
+                    if ["DIV", "IDIV"].contains(&xed.get_iclass().as_str()) {
                         explained.push(ExplainedMismatch::DivOutOfRange);
                     } else {
                         unexplained.push(build_unexplained(i, j, diff.diff_type.clone(), &diff.example_before));
