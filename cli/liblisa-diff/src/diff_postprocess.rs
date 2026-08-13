@@ -1,6 +1,7 @@
 use crate::diff_types::{Diff, DiffResult};
 use crate::state_diff::{DifferenceType, OkMismatch};
 use liblisa::arch::{CpuState, x64::{GpReg, X64Arch, X64Flag, X64Reg, X87Reg, XmmReg}};
+use liblisa::oracle::OracleError;
 use liblisa::state::SystemState;
 use thiserror::Error;
 use xed_sys::*;
@@ -33,6 +34,10 @@ pub enum ExplainedMismatch {
     /// Spec: `When specifying a word location in an MMX technology register, the 2 least-significant bits of the count operand specify the location;`
     /// Note: other variants of PINSR[.] as well as PINSRW with XMM register are implemented correctly
     PINSRWMMXImmTooLarge,
+    /// Division can go out-of-range of resulting type, which will cause ComputationError on CPU
+    /// while Ghidra only cuts off the result to the resulting type
+    /// happens for example on `0xffff / 0xf7`
+    DivOutOfRange,
 }
 
 impl ExplainedMismatch {
@@ -59,6 +64,9 @@ impl ExplainedMismatch {
             ExplainedMismatch::PINSRWMMXImmTooLarge => {
                 "Ghidra's implementation of PINSRW with MMX register uses more than the two least-significant bits to determine the target".to_string()
             }
+            ExplainedMismatch::DivOutOfRange => {
+                "Division result is out-of-range of resulting type".to_string()
+            }
         }
     }
     pub fn name(&self) -> String {
@@ -70,6 +78,7 @@ impl ExplainedMismatch {
             ExplainedMismatch::SHR1OF => "SHR1OF".to_string(),
             ExplainedMismatch::PSLLDQShiftIndependent => "PSLLDQShiftIndependent".to_string(),
             ExplainedMismatch::PINSRWMMXImmTooLarge => "PINSRWMMXImmTooLarge".to_string(),
+            ExplainedMismatch::DivOutOfRange => "DivOutOfRange".to_string(),
         }
     }
 }
@@ -104,7 +113,15 @@ pub unsafe fn postprocess(diff: &Diff) -> (Vec<ExplainedMismatch>, Vec<Unexplain
                             unexplained.push(build_unexplained(i, j, diff_type, &diff.example_before));
                         }
                     }
-                }
+                },
+                DifferenceType::OkErr(OracleError::ComputationError) => {
+                    let xed = get_xed_interface(&diff.example_before).expect("failed to get xed interface");
+                    if xed.get_iclass() == "DIV" {
+                        explained.push(ExplainedMismatch::DivOutOfRange);
+                    } else {
+                        unexplained.push(build_unexplained(i, j, diff.diff_type.clone(), &diff.example_before));
+                    }
+                },
                 _ => {
                     unexplained.push(build_unexplained(i, j, diff.diff_type.clone(), &diff.example_before));
                 }
