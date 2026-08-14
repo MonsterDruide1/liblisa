@@ -42,6 +42,10 @@ pub enum ExplainedMismatch {
     /// when Reg8 and m8 use the same register, this will cause the second write to end up at a different location than intended
     /// the result can be anything from ineffective writes, shifted results up to a page fault (=> unmapped new target)
     XADDRegisterConflict,
+    /// ENTER seems to be implemented incorrectly on Intel i5-8365U:
+    /// it treats the first operand (imm16) as signed instead of unsigned
+    /// Ghidra is correct here, and it seems to be limited to this single CPU from my test set
+    EnterCPUWrongSigned,
 }
 
 impl ExplainedMismatch {
@@ -74,6 +78,9 @@ impl ExplainedMismatch {
             ExplainedMismatch::XADDRegisterConflict => {
                 "Ghidra's implementation of XADD with register and memory operand using the same register can cause unexpected behavior".to_string()
             }
+            ExplainedMismatch::EnterCPUWrongSigned => {
+                "Intel i5-8365U CPU treats the first operand of ENTER as signed instead of unsigned, while Ghidra is correct".to_string()
+            }
         }
     }
     pub fn name(&self) -> String {
@@ -87,6 +94,7 @@ impl ExplainedMismatch {
             ExplainedMismatch::PINSRWMMXImmTooLarge => "PINSRWMMXImmTooLarge".to_string(),
             ExplainedMismatch::DivOutOfRange => "DivOutOfRange".to_string(),
             ExplainedMismatch::XADDRegisterConflict => "XADDRegisterConflict".to_string(),
+            ExplainedMismatch::EnterCPUWrongSigned => "EnterCPUWrongSigned".to_string(),
         }
     }
 }
@@ -254,7 +262,7 @@ unsafe fn try_explain_mismatch(mismatch: &OkMismatch, state: &SystemState<X64Arc
             }
             None
         }
-        RegMismatch(reg, _, _) => {
+        RegMismatch(reg, ghidra, vm) => {
             let xed = get_xed_interface(state).expect("failed to get xed interface");
             let ops = xed.get_operands();
 
@@ -272,6 +280,21 @@ unsafe fn try_explain_mismatch(mismatch: &OkMismatch, state: &SystemState<X64Arc
             }
             if is_xadd_register_conflict(state, Some(reg)) {
                 return Some(ExplainedMismatch::XADDRegisterConflict);
+            }
+
+            if reg == &GpReg::Rsp && xed.get_iclass() == "ENTER" && (|| {
+                let Some(InstrOperand::ImmUnsigned(imm)) = ops.get(0) else { return false; };
+                let imm = *imm as u16;
+                let Some(InstrOperand::SecondImm(nesting)) = ops.get(1) else { return false; };
+                let nesting = nesting % 32;
+                
+                let rsp_before = CpuState::<X64Arch>::gpreg(state.cpu(), GpReg::Rsp);
+                let rsp = rsp_before.wrapping_sub(8).wrapping_sub(nesting as u64 * 8);
+                let correct_rsp = rsp.wrapping_sub(imm as u64);
+                let faulty_rsp = rsp.wrapping_sub(imm.cast_signed() as u64);
+                *ghidra == correct_rsp && *vm == faulty_rsp
+            })() {
+                return Some(ExplainedMismatch::EnterCPUWrongSigned);
             }
             None
         }
@@ -365,6 +388,7 @@ enum InstrOperand {
     },
     ImmSigned(i32),
     ImmUnsigned(u64),
+    SecondImm(u8),
     Unk,
 }
 bitflags::bitflags! {
@@ -452,6 +476,10 @@ impl XedInterface {
                         let imm = xed_decoded_inst_get_unsigned_immediate(&self.inst);
                         InstrOperand::ImmUnsigned(imm)
                     }
+                },
+                XED_OPERAND_IMM1 => {
+                    // second immediate is always 1 byte, unsigned
+                    InstrOperand::SecondImm(xed_decoded_inst_get_second_immediate(&self.inst))
                 },
                 XED_OPERAND_MEM0 | XED_OPERAND_MEM1 => {
                     let mem_idx = if operand_name == XED_OPERAND_MEM0 { 0 } else { 1 };
