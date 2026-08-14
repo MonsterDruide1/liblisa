@@ -275,7 +275,7 @@ unsafe fn try_explain_mismatch(mismatch: &OkMismatch, state: &SystemState<X64Arc
                     _ => false,
                 }
             });
-            if is_target_reg && is_source_mem_0 && xed.get_iclass() == "BSF" {
+            if is_target_reg && is_source_mem_0 && ["BSF", "BSR"].contains(&xed.get_iclass().as_str()) {
                 return Some(ExplainedMismatch::UndefinedReg(xed.get_iclass()));
             }
             if is_xadd_register_conflict(state, Some(reg)) {
@@ -287,7 +287,7 @@ unsafe fn try_explain_mismatch(mismatch: &OkMismatch, state: &SystemState<X64Arc
                 let imm = *imm as u16;
                 let Some(InstrOperand::SecondImm(nesting)) = ops.get(1) else { return false; };
                 let nesting = nesting % 32;
-                
+
                 let rsp_before = CpuState::<X64Arch>::gpreg(state.cpu(), GpReg::Rsp);
                 let rsp = rsp_before.wrapping_sub(8).wrapping_sub(nesting as u64 * 8);
                 let correct_rsp = rsp.wrapping_sub(imm as u64);
