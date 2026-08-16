@@ -224,6 +224,13 @@ fn get_mapped_memory(state: &SystemState<X64Arch>, addr: u64, size: usize) -> Op
     Some(data)
 }
 fn get_mem_operand(state: &SystemState<X64Arch>, mem_operand: &InstrOperand) -> Option<Vec<u8>> {
+    // copy state and adjust RIP to point to after instruction
+    // relevant for memory accesses with RIP-relative addressing (or using RIP as index, ...)
+    let mut state = state.clone();
+    let pc = CpuState::<X64Arch>::gpreg(state.cpu(), GpReg::Rip);
+    let new_pc = pc + get_instruction(&state).unwrap_or(&[]).len() as u64;
+    CpuState::<X64Arch>::set_gpreg(state.cpu_mut(), GpReg::Rip, new_pc);
+
     let InstrOperand::Mem { seg, base, index, scale, disp, width, .. } = mem_operand else {
         return None;
     };
@@ -245,7 +252,7 @@ fn get_mem_operand(state: &SystemState<X64Arch>, mem_operand: &InstrOperand) -> 
     let displacement = disp.unwrap_or(0) as u64;
 
     let effective_addr = base_addr.wrapping_add(index_addr.wrapping_mul(scale_factor)).wrapping_add(displacement);
-    get_mapped_memory(state, effective_addr, *width as usize)
+    get_mapped_memory(&state, effective_addr, *width as usize)
 }
 
 unsafe fn get_xed_interface(state: &SystemState<X64Arch>) -> Result<XedInterface, XedError> {
