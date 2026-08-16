@@ -46,6 +46,12 @@ pub enum ExplainedMismatch {
     /// it treats the first operand (imm16) as signed instead of unsigned
     /// Ghidra is correct here, and it seems to be limited to this single CPU from my test set
     EnterCPUWrongSigned,
+    /// for MOV reg, sreg, Ghidra only copies over the lower 16 bits, leaving the upper 48 bits unchanged.
+    /// Specification says that upper bits should usually be zero-extended (unless older generations of 32-bit CPUs):
+    /// > The upper bits of the destination register are zero for most IA-32 processors (Pentium Pro processors and later)
+    /// > and all Intel 64 processors, with the exception that bits 31:16 are undefined for Intel Quark X1000 processors,
+    /// > Pentium, and earlier processors.
+    MovSRegNonZeroExtended,
 }
 
 impl ExplainedMismatch {
@@ -81,6 +87,9 @@ impl ExplainedMismatch {
             ExplainedMismatch::EnterCPUWrongSigned => {
                 "Intel i5-8365U CPU treats the first operand of ENTER as signed instead of unsigned, while Ghidra is correct".to_string()
             }
+            ExplainedMismatch::MovSRegNonZeroExtended => {
+                "Ghidra's implementation of MOV reg, sreg only copies over the lower 16 bits, leaving the upper 48 bits unchanged".to_string()
+            }
         }
     }
     pub fn name(&self) -> String {
@@ -95,6 +104,7 @@ impl ExplainedMismatch {
             ExplainedMismatch::DivOutOfRange => "DivOutOfRange".to_string(),
             ExplainedMismatch::XADDRegisterConflict => "XADDRegisterConflict".to_string(),
             ExplainedMismatch::EnterCPUWrongSigned => "EnterCPUWrongSigned".to_string(),
+            ExplainedMismatch::MovSRegNonZeroExtended => "MovSRegNonZeroExtended".to_string(),
         }
     }
 }
@@ -296,6 +306,16 @@ unsafe fn try_explain_mismatch(mismatch: &OkMismatch, state: &SystemState<X64Arc
             })() {
                 return Some(ExplainedMismatch::EnterCPUWrongSigned);
             }
+
+            if is_target_reg && xed.is_operand_sreg(1) && xed.get_iclass() == "MOV" {
+                let reg_before = CpuState::<X64Arch>::gpreg(state.cpu(), *reg);
+                let mask = 0xffff;
+                // high bits of vm are 0, high bits of ghidra are unchanged, low bits are identical
+                if (vm & !mask) == 0 && (reg_before & !mask) == (ghidra & !mask) && (ghidra & mask) == (vm & mask) {
+                    return Some(ExplainedMismatch::MovSRegNonZeroExtended);
+                }
+            }
+
             None
         }
         X87RegMismatch(reg, ghidra, vm) => {
@@ -513,6 +533,17 @@ impl XedInterface {
             operands.push(operand);
         }
         operands
+    }
+
+    pub unsafe fn is_operand_sreg(&self, index: u32) -> bool {
+        let xi = xed_decoded_inst_inst(&self.inst);
+        if index >= xed_inst_noperands(xi) { return false; }
+        let operand_name: xed_operand_enum_t = xed_operand_name(xed_inst_operand(xi, index));
+        if !matches!(operand_name, XED_OPERAND_REG0 | XED_OPERAND_REG1 | XED_OPERAND_REG2 | XED_OPERAND_REG3 | XED_OPERAND_REG4 | XED_OPERAND_REG5 | XED_OPERAND_REG6 | XED_OPERAND_REG7) {
+            return false;
+        }
+        let reg = xed_decoded_inst_get_reg(&self.inst, operand_name);
+        matches!(reg, XED_REG_ES | XED_REG_CS | XED_REG_SS | XED_REG_DS | XED_REG_FS | XED_REG_GS)
     }
 
     fn xed_reg_to_x64reg(reg: xed_reg_enum_t) -> Option<X64Reg> {
