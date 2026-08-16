@@ -1,4 +1,13 @@
-use std::{collections::HashMap, error::Error, fs::{self, File}, io::BufReader, mem, path::PathBuf, sync::{Mutex, atomic::{AtomicBool, Ordering}, mpsc::{RecvTimeoutError, channel}}, thread::{scope, spawn}, time::{Duration, Instant}};
+use std::collections::HashMap;
+use std::error::Error;
+use std::fs::{self, File};
+use std::io::BufReader;
+use std::path::PathBuf;
+use std::sync::{Mutex, atomic::{AtomicBool, Ordering}, mpsc::{RecvTimeoutError, channel}};
+use std::thread::{scope, spawn};
+use std::time::{Duration, Instant};
+
+use itertools::Itertools;
 
 use liblisa::{arch::x64::X64Arch, oracle::Oracle};
 use liblisa::encoding::Encoding;
@@ -263,6 +272,14 @@ impl DiffCommand {
                         println!("  {:?}: {}", explain_type, count);
                     }
                     println!("Unexplained mismatches: {}", unexplained.len());
+                    let mut unexplained_by_iclass = HashMap::new();
+                    for item in &unexplained {
+                        unexplained_by_iclass.entry(item.iclass.clone()).or_insert(Vec::new()).push(item);
+                    }
+                    for (iclass, items) in unexplained_by_iclass.iter().sorted_by_key(|(_, v)| v.len()).rev() {
+                        println!("  {}: {}", iclass, items.len());
+                    }
+                    println!("Unexplained mismatches details:");
                     for item in unexplained {
                         let instr = item.instr.iter().map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join("");
                         println!("  [{}-{}]: {} = {} => {:?}", item.item_index, item.diff_index, instr, item.iclass, item.diff_type);

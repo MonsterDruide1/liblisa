@@ -29,6 +29,7 @@ nix = { version = "0.27.1", features = ["process", "ptrace", "signal", "sched"] 
 thiserror = "1"
 xed-sys = { git = "https://github.com/MonsterDruide1/xed-sys.git" }
 bitflags = "2.13.1"
+itertools = "0.15.0"
 
 [dev-dependencies]
 test-log = "0.2.10"
