@@ -52,6 +52,10 @@ pub enum ExplainedMismatch {
     /// > and all Intel 64 processors, with the exception that bits 31:16 are undefined for Intel Quark X1000 processors,
     /// > Pentium, and earlier processors.
     MovSRegNonZeroExtended,
+    /// NOPs with REX prefix end up as `REX XCHG eax, eax` in Ghidra, which causes the top 32 bits to be shaved off. Spec:
+    /// > XCHG (E)AX, (E)AX (encoded instruction byte is 90H) is an alias for NOP regardless of data size prefixes, including REX.W.
+    /// => should still do nothing, Ghidra does not treat this special case right
+    RexNopDiscardsHighBytes,
 }
 
 impl ExplainedMismatch {
@@ -90,6 +94,9 @@ impl ExplainedMismatch {
             ExplainedMismatch::MovSRegNonZeroExtended => {
                 "Ghidra's implementation of MOV reg, sreg only copies over the lower 16 bits, leaving the upper 48 bits unchanged".to_string()
             }
+            ExplainedMismatch::RexNopDiscardsHighBytes => {
+                "NOPs with REX prefix end up as `REX XCHG eax, eax` in Ghidra, which causes the top 32 bits to be shaved off".to_string()
+            }
         }
     }
     pub fn name(&self) -> String {
@@ -105,6 +112,7 @@ impl ExplainedMismatch {
             ExplainedMismatch::XADDRegisterConflict => "XADDRegisterConflict".to_string(),
             ExplainedMismatch::EnterCPUWrongSigned => "EnterCPUWrongSigned".to_string(),
             ExplainedMismatch::MovSRegNonZeroExtended => "MovSRegNonZeroExtended".to_string(),
+            ExplainedMismatch::RexNopDiscardsHighBytes => "RexNopDiscardsHighBytes".to_string(),
         }
     }
 }
@@ -313,6 +321,15 @@ unsafe fn try_explain_mismatch(mismatch: &OkMismatch, state: &SystemState<X64Arc
                 // high bits of vm are 0, high bits of ghidra are unchanged, low bits are identical
                 if (vm & !mask) == 0 && (reg_before & !mask) == (ghidra & !mask) && (ghidra & mask) == (vm & mask) {
                     return Some(ExplainedMismatch::MovSRegNonZeroExtended);
+                }
+            }
+
+            if *reg == GpReg::Rax && xed.get_iclass() == "NOP" {
+                let reg_before = CpuState::<X64Arch>::gpreg(state.cpu(), *reg);
+                let mask = 0xffffffff;
+                // vm is unchanged, ghidra is cut off to 32 bits
+                if *vm == reg_before && (ghidra & mask) == (reg_before & mask) && (ghidra & !mask) == 0 {
+                    return Some(ExplainedMismatch::RexNopDiscardsHighBytes);
                 }
             }
 
