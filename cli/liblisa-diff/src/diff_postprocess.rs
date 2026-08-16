@@ -293,7 +293,11 @@ unsafe fn try_explain_mismatch(mismatch: &OkMismatch, state: &SystemState<X64Arc
                     _ => false,
                 }
             });
-            if is_target_reg && is_source_mem_0 && ["BSF", "BSR"].contains(&xed.get_iclass().as_str()) {
+            let is_source_reg_0 = ops.get(1).map_or(false, |op| {
+                let InstrOperand::Reg(Some(X64Reg::GpReg(r))) = op else { return false; };
+                CpuState::<X64Arch>::gpreg(state.cpu(), *r) == 0
+            });
+            if is_target_reg && (is_source_mem_0 || is_source_reg_0) && ["BSF", "BSR"].contains(&xed.get_iclass().as_str()) {
                 return Some(ExplainedMismatch::UndefinedReg(xed.get_iclass()));
             }
             if is_xadd_register_conflict(state, Some(reg)) {
