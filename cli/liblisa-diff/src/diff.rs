@@ -234,56 +234,52 @@ fn run_instr_single(
             continue;
         }
 
-        if r1.is_ok() && r2.is_ok() {
-            // scan memory accesses and add new mappings for any that are not already mapped
-            // might happen if accesses go to already-mapped page, but outside mapped range
-            let mut any_new_mappings = false;
-            let mut restart = false;
-            loop {
-                let mut need_more_mappings = false;
-                
-                let addrs = if MEM_ACCESS_SCAN_GHIDRA_ONLY {
-                    state.o1.scan_memory_accesses(&before).expect("scan_memory_accesses should not fail if observe succeeded")
-                } else {
-                    let a1 = state.o1.scan_memory_accesses(&before);
-                    let a2 = state.o2.scan_memory_accesses(&before);
-                    let (Ok(accesses1), Ok(accesses2)) = (a1, a2) else {
-                        unreachable!("scan_memory_accesses should not fail if observe succeeded");
-                    };
-                    accesses1.into_iter().chain(accesses2.into_iter()).collect()
-                };
-                for addr in addrs {
-                    let is_mapped = before.memory().iter().any(|(mapped_addr, _, data)| {
-                        mapped_addr.into_area(data.len() as u64).contains(addr)
-                    });
-                    if !is_mapped {
-                        debug!("Adding mapping for memory access to {:x} that was not already mapped", addr.as_u64());
-                        debug!("  before: {:?}", before);
-                        if !try_add_memory_mapping(&mut before, addr, &mut state.rng) {
-                            before = state_gen.randomize_new(&mut state.rng)?;
-                            // do not continue adding more mapping, as new state has been generated
-                            restart = true;
-                            break;
-                        }
-                        // try_add_memory_mapping adds range, and accesses might contain duplicates, so just start over and re-scan
-                        need_more_mappings = true;
-                        any_new_mappings = true;
+        // scan memory accesses and add new mappings for any that are not already mapped
+        // might happen if accesses go to already-mapped page, but outside mapped range
+        let mut any_new_mappings = false;
+        let mut restart = false;
+        loop {
+            let mut need_more_mappings = false;
+
+            let mut addrs = vec![];
+            if r1.is_ok() {
+                addrs.extend(state.o1.scan_memory_accesses(&before).expect("scan_memory_accesses should not fail if observe succeeded"));
+            }
+            if r2.is_ok() && (!MEM_ACCESS_SCAN_GHIDRA_ONLY || r1.is_err()) {
+                addrs.extend(state.o2.scan_memory_accesses(&before).expect("scan_memory_accesses should not fail if observe succeeded"));
+            }
+            
+            for addr in addrs {
+                let is_mapped = before.memory().iter().any(|(mapped_addr, _, data)| {
+                    mapped_addr.into_area(data.len() as u64).contains(addr)
+                });
+                if !is_mapped {
+                    debug!("Adding mapping for memory access to {:x} that was not already mapped", addr.as_u64());
+                    debug!("  before: {:?}", before);
+                    if !try_add_memory_mapping(&mut before, addr, &mut state.rng) {
+                        before = state_gen.randomize_new(&mut state.rng)?;
+                        // do not continue adding more mapping, as new state has been generated
+                        restart = true;
+                        break;
                     }
-                }
-                // for restart: do not try collecting more mappings here, as new state must first be checked with MemoryAccess errors
-                // if no new mappings were added, we can break out of the loop and continue with the instruction execution
-                if restart || !need_more_mappings {
-                    break;
+                    // try_add_memory_mapping adds range, and accesses might contain duplicates, so just start over and re-scan
+                    need_more_mappings = true;
+                    any_new_mappings = true;
                 }
             }
-            if restart {
-                continue;  // start over with the outer loop on the new state
+            // for restart: do not try collecting more mappings here, as new state must first be checked with MemoryAccess errors
+            // if no new mappings were added, we can break out of the loop and continue with the instruction execution
+            if restart || !need_more_mappings {
+                break;
             }
-            if any_new_mappings {
-                // done with adding mappings, re-execute state to get final result
-                r1 = state.o1.observe(&before);
-                r2 = state.o2.observe(&before);
-            }
+        }
+        if restart {
+            continue;  // start over with the outer loop on the new state
+        }
+        if any_new_mappings {
+            // done with adding mappings, re-execute state to get final result
+            r1 = state.o1.observe(&before);
+            r2 = state.o2.observe(&before);
         }
         
 
