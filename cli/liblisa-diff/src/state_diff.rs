@@ -175,9 +175,12 @@ pub fn compare(r1: &Result<SystemState<X64Arch>, OracleError>, r2: &Result<Syste
             if r1.cpu().x87.condition_codes != r2.cpu().x87.condition_codes {
                 mismatches.push(OkMismatch::X87ConditionCodesMismatch(r1.cpu().x87.condition_codes, r2.cpu().x87.condition_codes));
             }
-            if r1.cpu().x87.tag_word != r2.cpu().x87.tag_word {
+            // tag words cannot be diffed, because Ghidra and the CPU do not match in their representation presented to LibLISA
+            // Ghidra: raw 2-byte tag word, 2 bits per register indicating state
+            // CPU: abridged version with 1 bit per register, as given by XSAVE
+            /*if r1.cpu().x87.tag_word != r2.cpu().x87.tag_word {
                 mismatches.push(OkMismatch::X87TagWordMismatch(r1.cpu().x87.tag_word, r2.cpu().x87.tag_word));
-            }
+            }*/
             for ((addr1, perms1, data1), (addr2, perms2, data2)) in r1.memory().iter().zip(r2.memory().iter()) {
                 assert!(addr1 == addr2 && perms1 == perms2);
                 if data1 != data2 {
