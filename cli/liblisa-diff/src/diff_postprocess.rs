@@ -17,6 +17,12 @@ pub enum ExplainedMismatch {
     AfNotImplemented,
     /// using MMX instructions resets X87 stack (top-of-stack and tag-word), which is not done in Ghidra
     X87ResetOnMMX,
+    /// tag words cannot really be diffed, because Ghidra and the CPU do not match in their representation presented to LibLISA
+    /// Ghidra: raw 2-byte tag word, 2 bits per register indicating state
+    /// CPU: abridged version with 1 bit per register, as given by XSAVE
+    /// this manifests in diffs relating to the tag word, and potentially even some instructions where the tag word is used as input data
+    /// no relevant instructions of the latter kind are implemented in Ghidra at the moment though
+    X87TagWordRepresentationMismatch,        
     /// x87 exception flags contains a summary bit, which is set when any exception bit is set: [Intel, 8.1.3.3]
     /// > The exception summary status flag (ES, bit 7) is set when any of the unmasked exception flags are set.
     /// on CPUs, this is sometimes updated automatically, while Ghidra usually keeps it unchanged
@@ -77,6 +83,12 @@ impl ExplainedMismatch {
             ExplainedMismatch::X87ResetOnMMX => {
                 "X87 stack reset on MMX instruction is not implemented".to_string()
             }
+            ExplainedMismatch::X87TagWordRepresentationMismatch => {
+                "The representation of tag words differs between Ghidra and CPU, so no diffs can be made here".to_string()
+            }
+            ExplainedMismatch::X87ExceptionSummaryFlagOutdated => {
+                "Ghidra's implementation of X87 exception summary flag is outdated".to_string()
+            }
             ExplainedMismatch::SHR1OF => {
                 "Ghidra's implementation of SHR instruction sets OF=0 for 1-bit shifts, while specification says it should be the most-significant bit of the original operand".to_string()
             }
@@ -101,9 +113,6 @@ impl ExplainedMismatch {
             ExplainedMismatch::RexNopDiscardsHighBytes => {
                 "NOPs with REX prefix end up as `REX XCHG eax, eax` in Ghidra, which causes the top 32 bits to be shaved off".to_string()
             }
-            ExplainedMismatch::X87ExceptionSummaryFlagOutdated => {
-                "Ghidra's implementation of X87 exception summary flag is outdated".to_string()
-            }
         }
     }
     pub fn name(&self) -> String {
@@ -112,6 +121,8 @@ impl ExplainedMismatch {
             ExplainedMismatch::UndefinedReg(_) => "UndefinedReg".to_string(),
             ExplainedMismatch::AfNotImplemented => "AfNotImplemented".to_string(),
             ExplainedMismatch::X87ResetOnMMX => "X87ResetOnMMX".to_string(),
+            ExplainedMismatch::X87TagWordRepresentationMismatch => "X87TagWordRepresentationMismatch".to_string(),
+            ExplainedMismatch::X87ExceptionSummaryFlagOutdated => "X87ExceptionSummaryFlagOutdated".to_string(),
             ExplainedMismatch::SHR1OF => "SHR1OF".to_string(),
             ExplainedMismatch::PSLLDQShiftIndependent => "PSLLDQShiftIndependent".to_string(),
             ExplainedMismatch::PINSRWMMXImmTooLarge => "PINSRWMMXImmTooLarge".to_string(),
@@ -120,7 +131,6 @@ impl ExplainedMismatch {
             ExplainedMismatch::EnterCPUWrongSigned => "EnterCPUWrongSigned".to_string(),
             ExplainedMismatch::MovSRegNonZeroExtended => "MovSRegNonZeroExtended".to_string(),
             ExplainedMismatch::RexNopDiscardsHighBytes => "RexNopDiscardsHighBytes".to_string(),
-            ExplainedMismatch::X87ExceptionSummaryFlagOutdated => "X87ExceptionSummaryFlagOutdated".to_string(),
         }
     }
 }
@@ -293,7 +303,7 @@ unsafe fn try_explain_mismatch(mismatch: &OkMismatch, state: &SystemState<X64Arc
             if *ghidra == state.cpu.x87.tag_word && *vm == 0xff {
                 return Some(ExplainedMismatch::X87ResetOnMMX);
             }
-            None
+            Some(ExplainedMismatch::X87TagWordRepresentationMismatch)
         }
         X87ExceptionFlagsMismatch(ghidra, vm) => {
             let exception_summary_mask = 0xff << (7*8);
