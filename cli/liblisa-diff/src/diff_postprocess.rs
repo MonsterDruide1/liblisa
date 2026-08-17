@@ -318,18 +318,17 @@ unsafe fn try_explain_mismatch(mismatch: &OkMismatch, state: &SystemState<X64Arc
             let xed = get_xed_interface(state).expect("failed to get xed interface");
             let ops = xed.get_operands();
 
-            let is_target_reg = ops.get(0) == Some(&InstrOperand::Reg(Some(X64Reg::GpReg(*reg))));
+            let is_target_reg = ops.get(0).is_some_and(|op| op.is_reg(reg));
             let is_source_mem_0 = ops.get(1).is_some_and(|mem| {
                 match &mem {
                     InstrOperand::Mem { access, .. } => {
-                        *access == MemAccess::READ && get_mem_operand(state, mem).is_some_and(|v| v.iter().all(|&x| x==0))
+                        access.contains(MemAccess::READ) && get_mem_operand(state, mem).is_some_and(|v| v.iter().all(|&x| x==0))
                     }
                     _ => false,
                 }
             });
             let is_source_reg_0 = ops.get(1).map_or(false, |op| {
-                let InstrOperand::Reg(Some(X64Reg::GpReg(r))) = op else { return false; };
-                CpuState::<X64Arch>::gpreg(state.cpu(), *r) == 0
+                op.get_reg_value(state).is_some_and(|v| v == 0)
             });
             if is_target_reg && (is_source_mem_0 || is_source_reg_0) && ["BSF", "BSR"].contains(&xed.get_iclass().as_str()) {
                 return Some(ExplainedMismatch::UndefinedReg(xed.get_iclass()));
@@ -380,7 +379,7 @@ unsafe fn try_explain_mismatch(mismatch: &OkMismatch, state: &SystemState<X64Arc
             let xed = get_xed_interface(state).expect("failed to get xed interface");
             let ops = xed.get_operands();
 
-            let is_target_reg = ops.get(0) == Some(&InstrOperand::Reg(Some(X64Reg::X87(*reg))));
+            let is_target_reg = ops.get(0).is_some_and(|op| op.is_x87_reg(reg));
             if is_target_reg && ghidra[..8] == vm[..8] && ghidra[8..] == state.cpu.x87.fpr[fpr_index as usize][8..] && vm[8..] == [0xff; 2] {
                 return Some(ExplainedMismatch::X87ResetOnMMX);
             }
@@ -419,21 +418,21 @@ unsafe fn is_xadd_register_conflict(state: &SystemState<X64Arch>, mismatching_re
         error!("Unexpected first operand type for XADD: {:?}", mem_operand);
         return false;
     };
-    let Some(InstrOperand::Reg(Some(reg))) = reg_operand else {
+    let Some(InstrOperand::Reg(InstrOperandReg::GpReg { reg, .. })) = reg_operand else {
         error!("Unexpected second operand type for XADD: {:?}", reg_operand);
         return false;
     };
-    if mismatching_reg.is_some_and(|r| X64Reg::GpReg(*r) != *reg) {
+    if mismatching_reg.is_some_and(|r| r != reg) {
         return false;
     }
 
-    if seg.is_some_and(|s| reg == &X64Reg::GpReg(s)) {
+    if seg.is_some_and(|s| *reg == s) {
         return true;
     }
-    if base.is_some_and(|b| reg == &X64Reg::GpReg(b)) {
+    if base.is_some_and(|b| *reg == b) {
         return true;
     }
-    if index.is_some_and(|i| reg == &X64Reg::GpReg(i)) {
+    if index.is_some_and(|i| *reg == i) {
         return true;
     }
     false
@@ -450,8 +449,21 @@ struct XedInterface {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+enum InstrOperandReg {
+    GpReg {
+        reg: GpReg,
+        width: u8,  // in bytes
+        offset: u8,  // in bytes
+    },
+    XmmReg(XmmReg),
+    X87Reg(X87Reg),
+    SReg(&'static str),
+    Unk,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 enum InstrOperand {
-    Reg(Option<X64Reg>),
+    Reg(InstrOperandReg),
     Mem {
         access: MemAccess,
         seg: Option<GpReg>,
@@ -471,6 +483,40 @@ bitflags::bitflags! {
     struct MemAccess: u8 {
         const READ  = 0b01;
         const WRITE = 0b10;
+    }
+}
+
+impl InstrOperand {
+    fn get_width_mask(width: u8) -> u64 {
+        match width {
+            1 => 0xff,
+            2 => 0xffff,
+            4 => 0xffffffff,
+            8 => 0xffffffffffffffff,
+            _ => panic!("Unsupported width: {}", width),
+        }
+    }
+
+    pub fn is_reg(&self, reg: &GpReg) -> bool {
+        match self {
+            InstrOperand::Reg(InstrOperandReg::GpReg { reg: r, .. }) => r == reg,
+            _ => false,
+        }
+    }
+    pub fn is_x87_reg(&self, reg: &X87Reg) -> bool {
+        match self {
+            InstrOperand::Reg(InstrOperandReg::X87Reg(r)) => r == reg,
+            _ => false,
+        }
+    }
+    pub fn get_reg_value(&self, state: &SystemState<X64Arch>) -> Option<u64> {
+        match self {
+            InstrOperand::Reg(InstrOperandReg::GpReg { reg, width, offset }) => {
+                let value = CpuState::<X64Arch>::gpreg(state.cpu(), *reg);
+                Some((value >> (offset * 8)) & Self::get_width_mask(*width))
+            }
+            _ => None,
+        }
     }
 }
 
@@ -540,7 +586,7 @@ impl XedInterface {
             let operand_name: xed_operand_enum_t = xed_operand_name(xed_inst_operand(xi, i));
             let operand = match operand_name {
                 XED_OPERAND_REG0 | XED_OPERAND_REG1 | XED_OPERAND_REG2 | XED_OPERAND_REG3 | XED_OPERAND_REG4 | XED_OPERAND_REG5 | XED_OPERAND_REG6 | XED_OPERAND_REG7 => {
-                    let reg = Self::xed_reg_to_x64reg(xed_decoded_inst_get_reg(&self.inst, operand_name));
+                    let reg = Self::xed_reg_to_opreg(xed_decoded_inst_get_reg(&self.inst, operand_name));
                     InstrOperand::Reg(reg)
                 },
                 XED_OPERAND_IMM0 => {
@@ -566,9 +612,8 @@ impl XedInterface {
                         access |= MemAccess::WRITE;
                     }
                     let x2g = |x| {
-                        match Self::xed_reg_to_x64reg(x) {
-                            None => None,
-                            Some(X64Reg::GpReg(g)) => Some(g),
+                        match Self::xed_reg_to_opreg(x) {
+                            InstrOperandReg::GpReg { reg: g, .. } => Some(g),
                             _ => panic!("Unexpected register type: {:?}", x),
                         }
                     };
@@ -601,68 +646,77 @@ impl XedInterface {
         matches!(reg, XED_REG_ES | XED_REG_CS | XED_REG_SS | XED_REG_DS | XED_REG_FS | XED_REG_GS)
     }
 
-    fn xed_reg_to_x64reg(reg: xed_reg_enum_t) -> Option<X64Reg> {
+    unsafe fn xed_reg_to_opreg(reg: xed_reg_enum_t) -> InstrOperandReg {
+        let enclosing_gpreg = match xed_get_largest_enclosing_register(reg) {
+            XED_REG_RAX => Some(GpReg::Rax),
+            XED_REG_RCX => Some(GpReg::Rcx),
+            XED_REG_RDX => Some(GpReg::Rdx),
+            XED_REG_RSI => Some(GpReg::Rsi),
+            XED_REG_RDI => Some(GpReg::Rdi),
+            XED_REG_RIP => Some(GpReg::Rip),
+            XED_REG_RBP => Some(GpReg::Rbp),
+            XED_REG_RBX => Some(GpReg::Rbx),
+            XED_REG_RSP => Some(GpReg::Rsp),
+            XED_REG_R8 => Some(GpReg::R8),
+            XED_REG_R9 => Some(GpReg::R9),
+            XED_REG_R10 => Some(GpReg::R10),
+            XED_REG_R11 => Some(GpReg::R11),
+            XED_REG_R12 => Some(GpReg::R12),
+            XED_REG_R13 => Some(GpReg::R13),
+            XED_REG_R14 => Some(GpReg::R14),
+            XED_REG_R15 => Some(GpReg::R15),
+            XED_REG_FSBASE => Some(GpReg::FsBase),
+            XED_REG_GSBASE => Some(GpReg::GsBase),
+            XED_REG_RFLAGS => Some(GpReg::RFlags),
+            _ => None,
+        };
+        if let Some(gpreg) = enclosing_gpreg {
+            let width = xed_get_register_width_bits64(reg) / 8;
+            let offset = match reg {
+                XED_REG_AH | XED_REG_CH | XED_REG_DH | XED_REG_BH => 1,
+                _ => 0,
+            };
+            return InstrOperandReg::GpReg { reg: gpreg, width: width as u8, offset: offset as u8 };
+        }
+
         match reg {
-            XED_REG_RAX | XED_REG_EAX | XED_REG_AX | XED_REG_AH | XED_REG_AL => Some(X64Reg::GpReg(GpReg::Rax)),
-            XED_REG_RCX | XED_REG_ECX | XED_REG_CX | XED_REG_CH | XED_REG_CL => Some(X64Reg::GpReg(GpReg::Rcx)),
-            XED_REG_RDX | XED_REG_EDX | XED_REG_DX | XED_REG_DH | XED_REG_DL => Some(X64Reg::GpReg(GpReg::Rdx)),
-            XED_REG_RSI | XED_REG_ESI | XED_REG_SI | XED_REG_SIL => Some(X64Reg::GpReg(GpReg::Rsi)),
-            XED_REG_RDI | XED_REG_EDI | XED_REG_DI | XED_REG_DIL => Some(X64Reg::GpReg(GpReg::Rdi)),
-            XED_REG_RIP | XED_REG_EIP | XED_REG_IP => Some(X64Reg::GpReg(GpReg::Rip)),
-            XED_REG_RBP | XED_REG_EBP | XED_REG_BP => Some(X64Reg::GpReg(GpReg::Rbp)),
-            XED_REG_RBX | XED_REG_EBX | XED_REG_BX | XED_REG_BH | XED_REG_BL => Some(X64Reg::GpReg(GpReg::Rbx)),
-            XED_REG_RSP | XED_REG_ESP | XED_REG_SP | XED_REG_SPL => Some(X64Reg::GpReg(GpReg::Rsp)),
-            XED_REG_R8 | XED_REG_R8D | XED_REG_R8W | XED_REG_R8B => Some(X64Reg::GpReg(GpReg::R8)),
-            XED_REG_R9 | XED_REG_R9D | XED_REG_R9W | XED_REG_R9B => Some(X64Reg::GpReg(GpReg::R9)),
-            XED_REG_R10 | XED_REG_R10D | XED_REG_R10W | XED_REG_R10B => Some(X64Reg::GpReg(GpReg::R10)),
-            XED_REG_R11 | XED_REG_R11D | XED_REG_R11W | XED_REG_R11B => Some(X64Reg::GpReg(GpReg::R11)),
-            XED_REG_R12 | XED_REG_R12D | XED_REG_R12W | XED_REG_R12B => Some(X64Reg::GpReg(GpReg::R12)),
-            XED_REG_R13 | XED_REG_R13D | XED_REG_R13W | XED_REG_R13B => Some(X64Reg::GpReg(GpReg::R13)),
-            XED_REG_R14 | XED_REG_R14D | XED_REG_R14W | XED_REG_R14B => Some(X64Reg::GpReg(GpReg::R14)),
-            XED_REG_R15 | XED_REG_R15D | XED_REG_R15W | XED_REG_R15B => Some(X64Reg::GpReg(GpReg::R15)),
-            XED_REG_FSBASE => Some(X64Reg::GpReg(GpReg::FsBase)),
-            XED_REG_GSBASE => Some(X64Reg::GpReg(GpReg::GsBase)),
-            XED_REG_RFLAGS => Some(X64Reg::GpReg(GpReg::RFlags)),
-            // Riz doesn't exist in XED
+            XED_REG_MMX0 => InstrOperandReg::X87Reg(X87Reg::Fpr(0)),
+            XED_REG_MMX1 => InstrOperandReg::X87Reg(X87Reg::Fpr(1)),
+            XED_REG_MMX2 => InstrOperandReg::X87Reg(X87Reg::Fpr(2)),
+            XED_REG_MMX3 => InstrOperandReg::X87Reg(X87Reg::Fpr(3)),
+            XED_REG_MMX4 => InstrOperandReg::X87Reg(X87Reg::Fpr(4)),
+            XED_REG_MMX5 => InstrOperandReg::X87Reg(X87Reg::Fpr(5)),
+            XED_REG_MMX6 => InstrOperandReg::X87Reg(X87Reg::Fpr(6)),
+            XED_REG_MMX7 => InstrOperandReg::X87Reg(X87Reg::Fpr(7)),
 
-            XED_REG_MMX0 => Some(X64Reg::X87(X87Reg::Fpr(0))),
-            XED_REG_MMX1 => Some(X64Reg::X87(X87Reg::Fpr(1))),
-            XED_REG_MMX2 => Some(X64Reg::X87(X87Reg::Fpr(2))),
-            XED_REG_MMX3 => Some(X64Reg::X87(X87Reg::Fpr(3))),
-            XED_REG_MMX4 => Some(X64Reg::X87(X87Reg::Fpr(4))),
-            XED_REG_MMX5 => Some(X64Reg::X87(X87Reg::Fpr(5))),
-            XED_REG_MMX6 => Some(X64Reg::X87(X87Reg::Fpr(6))),
-            XED_REG_MMX7 => Some(X64Reg::X87(X87Reg::Fpr(7))),
-
-            XED_REG_XMM0 => Some(X64Reg::Xmm(XmmReg::Reg(0))),
-            XED_REG_XMM1 => Some(X64Reg::Xmm(XmmReg::Reg(1))),
-            XED_REG_XMM2 => Some(X64Reg::Xmm(XmmReg::Reg(2))),
-            XED_REG_XMM3 => Some(X64Reg::Xmm(XmmReg::Reg(3))),
-            XED_REG_XMM4 => Some(X64Reg::Xmm(XmmReg::Reg(4))),
-            XED_REG_XMM5 => Some(X64Reg::Xmm(XmmReg::Reg(5))),
-            XED_REG_XMM6 => Some(X64Reg::Xmm(XmmReg::Reg(6))),
-            XED_REG_XMM7 => Some(X64Reg::Xmm(XmmReg::Reg(7))),
-            XED_REG_XMM8 => Some(X64Reg::Xmm(XmmReg::Reg(8))),
-            XED_REG_XMM9 => Some(X64Reg::Xmm(XmmReg::Reg(9))),
-            XED_REG_XMM10 => Some(X64Reg::Xmm(XmmReg::Reg(10))),
-            XED_REG_XMM11 => Some(X64Reg::Xmm(XmmReg::Reg(11))),
-            XED_REG_XMM12 => Some(X64Reg::Xmm(XmmReg::Reg(12))),
-            XED_REG_XMM13 => Some(X64Reg::Xmm(XmmReg::Reg(13))),
-            XED_REG_XMM14 => Some(X64Reg::Xmm(XmmReg::Reg(14))),
-            XED_REG_XMM15 => Some(X64Reg::Xmm(XmmReg::Reg(15))),
+            XED_REG_XMM0 => InstrOperandReg::XmmReg(XmmReg::Reg(0)),
+            XED_REG_XMM1 => InstrOperandReg::XmmReg(XmmReg::Reg(1)),
+            XED_REG_XMM2 => InstrOperandReg::XmmReg(XmmReg::Reg(2)),
+            XED_REG_XMM3 => InstrOperandReg::XmmReg(XmmReg::Reg(3)),
+            XED_REG_XMM4 => InstrOperandReg::XmmReg(XmmReg::Reg(4)),
+            XED_REG_XMM5 => InstrOperandReg::XmmReg(XmmReg::Reg(5)),
+            XED_REG_XMM6 => InstrOperandReg::XmmReg(XmmReg::Reg(6)),
+            XED_REG_XMM7 => InstrOperandReg::XmmReg(XmmReg::Reg(7)),
+            XED_REG_XMM8 => InstrOperandReg::XmmReg(XmmReg::Reg(8)),
+            XED_REG_XMM9 => InstrOperandReg::XmmReg(XmmReg::Reg(9)),
+            XED_REG_XMM10 => InstrOperandReg::XmmReg(XmmReg::Reg(10)),
+            XED_REG_XMM11 => InstrOperandReg::XmmReg(XmmReg::Reg(11)),
+            XED_REG_XMM12 => InstrOperandReg::XmmReg(XmmReg::Reg(12)),
+            XED_REG_XMM13 => InstrOperandReg::XmmReg(XmmReg::Reg(13)),
+            XED_REG_XMM14 => InstrOperandReg::XmmReg(XmmReg::Reg(14)),
+            XED_REG_XMM15 => InstrOperandReg::XmmReg(XmmReg::Reg(15)),
 
             // known to be missing in liblisa, add them here to silence `error!` below
-            XED_REG_ES => None,
-            XED_REG_CS => None,
-            XED_REG_SS => None,
-            XED_REG_DS => None,
-            XED_REG_FS => None,
-            XED_REG_GS => None,
+            XED_REG_ES => InstrOperandReg::SReg("ES"),
+            XED_REG_CS => InstrOperandReg::SReg("CS"),
+            XED_REG_SS => InstrOperandReg::SReg("SS"),
+            XED_REG_DS => InstrOperandReg::SReg("DS"),
+            XED_REG_FS => InstrOperandReg::SReg("FS"),
+            XED_REG_GS => InstrOperandReg::SReg("GS"),
 
-            XED_REG_INVALID => None,
             _ => {
                 error!("XED register {:?} not mapped to X64Reg", reg);
-                None
+                InstrOperandReg::Unk
             }
         }
     }
