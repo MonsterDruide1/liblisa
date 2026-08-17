@@ -297,8 +297,9 @@ unsafe fn try_explain_mismatch(mismatch: &OkMismatch, state: &SystemState<X64Arc
         }
         X87ExceptionFlagsMismatch(ghidra, vm) => {
             let exception_summary_mask = 0xff << (7*8);
-            // if ghidra has maintained old value for ES, but everything else matches
-            if (ghidra & exception_summary_mask) == (state.cpu.x87.exception_flags & exception_summary_mask) && (vm & !exception_summary_mask) == (ghidra & !exception_summary_mask) {
+            // if everything *but* exception summary mask matches
+            // note: ghidra might not maintain old value if `FLDENV` or similar is executed
+            if (vm & !exception_summary_mask) == (ghidra & !exception_summary_mask) {
                 return Some(ExplainedMismatch::X87ExceptionSummaryFlagOutdated);
             }
             None
