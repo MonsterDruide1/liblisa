@@ -13,6 +13,11 @@ pub enum ExplainedMismatch {
     UndefinedFlag(String, X64Flag),  // (instruction, flag)
     /// register is undefined as per intel manual/XED, CPUs/Ghidra might implement it differently
     UndefinedReg(String),  // (instruction) - register does not matter, as it will be different per instantiation
+    /// for instructions using 32-bit registers as target, the upper 32 bits of the registers should be zero-extended,
+    /// which is not done properly for some instructions in Ghidra. [Intel, 3.4.1.1]:
+    /// > 32-bit operands generate a 32-bit result, zero-extended to a 64-bit result in the destination general-purpose register
+    /// in Ghidra, this zero-extension is done manually through `build check_Reg32_dest;`, which is missing for some instructions.
+    Reg32NotZeroExtended,
     /// AF flag is not handled in Ghidra properly
     AfNotImplemented,
     /// using MMX instructions resets X87 stack (top-of-stack and tag-word), which is not done in Ghidra
@@ -77,6 +82,9 @@ impl ExplainedMismatch {
             ExplainedMismatch::UndefinedReg(iclass) => {
                 format!("Undefined register in instruction {}", iclass)
             }
+            ExplainedMismatch::Reg32NotZeroExtended => {
+                "Ghidra does not zero-extend the upper 32 bits of 32-bit register results".to_string()
+            }
             ExplainedMismatch::AfNotImplemented => {
                 "AF flag mismatch is not implemented".to_string()
             }
@@ -119,6 +127,7 @@ impl ExplainedMismatch {
         match self {
             ExplainedMismatch::UndefinedFlag(_, _) => "UndefinedFlag".to_string(),
             ExplainedMismatch::UndefinedReg(_) => "UndefinedReg".to_string(),
+            ExplainedMismatch::Reg32NotZeroExtended => "Reg32NotZeroExtended".to_string(),
             ExplainedMismatch::AfNotImplemented => "AfNotImplemented".to_string(),
             ExplainedMismatch::X87ResetOnMMX => "X87ResetOnMMX".to_string(),
             ExplainedMismatch::X87TagWordRepresentationMismatch => "X87TagWordRepresentationMismatch".to_string(),
@@ -317,6 +326,20 @@ unsafe fn try_explain_mismatch(mismatch: &OkMismatch, state: &SystemState<X64Arc
         RegMismatch(reg, ghidra, vm) => {
             let xed = get_xed_interface(state).expect("failed to get xed interface");
             let ops = xed.get_operands();
+
+            let target_reg = if xed.get_iclass() == "XADD" {
+                ops.get(1)
+            } else {
+                ops.get(0)
+            };
+            println!("target_reg: {:?}", target_reg);
+            if let Some(InstrOperand::Reg(InstrOperandReg::GpReg { reg: r, width, .. })) = target_reg {
+                println!("Checking for Reg32NotZeroExtended: reg={:?}, r={:?}, width={:?}, vm=0x{:x}, ghidra=0x{:x}", reg, r, width, vm, ghidra);
+                let mask = 0x00000000ffffffff;
+                if reg == r && *width == 4 && (vm & !mask) == 0 && (ghidra & mask) == (vm & mask) {
+                    return Some(ExplainedMismatch::Reg32NotZeroExtended);
+                }
+            }
 
             let is_target_reg = ops.get(0).is_some_and(|op| op.is_reg(reg));
             let is_source_mem_0 = ops.get(1).is_some_and(|mem| {
@@ -612,6 +635,9 @@ impl XedInterface {
                         access |= MemAccess::WRITE;
                     }
                     let x2g = |x| {
+                        if x == XED_REG_INVALID {
+                            return None;
+                        }
                         match Self::xed_reg_to_opreg(x) {
                             InstrOperandReg::GpReg { reg: g, .. } => Some(g),
                             _ => panic!("Unexpected register type: {:?}", x),
@@ -715,7 +741,7 @@ impl XedInterface {
             XED_REG_GS => InstrOperandReg::SReg("GS"),
 
             _ => {
-                error!("XED register {:?} not mapped to X64Reg", reg);
+                error!("XED register {:?} not mapped to OpReg", reg);
                 InstrOperandReg::Unk
             }
         }
