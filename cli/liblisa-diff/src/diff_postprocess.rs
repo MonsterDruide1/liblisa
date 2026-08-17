@@ -236,7 +236,7 @@ fn get_mapped_memory(state: &SystemState<X64Arch>, addr: u64, size: usize) -> Op
         let offset = current_addr.checked_sub(page_addr.as_u64()).unwrap() as usize;
         let remaining_bytes = end_addr.wrapping_sub(current_addr) as usize;
         let bytes_to_read = std::cmp::min(remaining_bytes, page_data.len() - offset);
-        data.extend_from_slice(&page_data[offset..offset + bytes_to_read]);
+        data.extend_from_slice(&page_data[offset..offset.checked_add(bytes_to_read).unwrap()]);
         current_addr = current_addr.wrapping_add(bytes_to_read as u64);
     }
     Some(data)
@@ -246,7 +246,7 @@ fn get_mem_operand(state: &SystemState<X64Arch>, mem_operand: &InstrOperand) -> 
     // relevant for memory accesses with RIP-relative addressing (or using RIP as index, ...)
     let mut state = state.clone();
     let pc = CpuState::<X64Arch>::gpreg(state.cpu(), GpReg::Rip);
-    let new_pc = pc + get_instruction(&state).unwrap_or(&[]).len() as u64;
+    let new_pc = pc.wrapping_add(get_instruction(&state).unwrap_or(&[]).len() as u64);
     CpuState::<X64Arch>::set_gpreg(state.cpu_mut(), GpReg::Rip, new_pc);
 
     let InstrOperand::Mem { seg, base, index, scale, disp, width, .. } = mem_operand else {
