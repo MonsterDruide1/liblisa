@@ -29,6 +29,11 @@ impl CliCommand {
                 println!("Running instruction...");
                 println!("{:?}", run_instr(&instr, diff_types::NUM_STATES_PER_INSTR, &mut state));
                 println!("Observed diffs: {:?}", state.diffs);
+                println!("First diff as json:");
+                if let Some(x) = state.diffs.get(0) {
+                    serde_json::to_writer(std::io::stdout(), &x.example_before).unwrap();
+                }
+                println!("");
                 println!("Postprocessing diffs...");
                 unsafe {
                     let (explained, unexplained) = diff_postprocess::postprocess(
