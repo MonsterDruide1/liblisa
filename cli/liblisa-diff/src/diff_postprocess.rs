@@ -327,17 +327,21 @@ unsafe fn try_explain_mismatch(mismatch: &OkMismatch, state: &SystemState<X64Arc
             let xed = get_xed_interface(state).expect("failed to get xed interface");
             let ops = xed.get_operands();
 
-            let target_reg = if xed.get_iclass() == "XADD" {
-                ops.get(1)
+            let target_regs = if xed.get_iclass() == "XADD" {
+                vec![ops.get(1).unwrap()]
+            } else if xed.get_iclass() == "CMPXCHG8B" {
+                assert!(ops.get(1).unwrap().is_reg(&GpReg::Rdx));
+                assert!(ops.get(2).unwrap().is_reg(&GpReg::Rax));
+                vec![ops.get(1).unwrap(), ops.get(2).unwrap()]
             } else {
-                ops.get(0)
+                if let Some(x) = ops.get(0) { vec![x] } else { vec![] }
             };
-            println!("target_reg: {:?}", target_reg);
-            if let Some(InstrOperand::Reg(InstrOperandReg::GpReg { reg: r, width, .. })) = target_reg {
-                println!("Checking for Reg32NotZeroExtended: reg={:?}, r={:?}, width={:?}, vm=0x{:x}, ghidra=0x{:x}", reg, r, width, vm, ghidra);
-                let mask = 0x00000000ffffffff;
-                if reg == r && *width == 4 && (vm & !mask) == 0 && (ghidra & mask) == (vm & mask) {
-                    return Some(ExplainedMismatch::Reg32NotZeroExtended);
+            for target_reg in target_regs {
+                if let InstrOperand::Reg(InstrOperandReg::GpReg { reg: r, width, .. }) = target_reg {
+                    let mask = 0x00000000ffffffff;
+                    if reg == r && *width == 4 && (vm & !mask) == 0 && (ghidra & mask) == (vm & mask) {
+                        return Some(ExplainedMismatch::Reg32NotZeroExtended);
+                    }
                 }
             }
 
