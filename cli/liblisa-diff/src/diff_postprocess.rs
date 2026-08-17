@@ -17,6 +17,10 @@ pub enum ExplainedMismatch {
     AfNotImplemented,
     /// using MMX instructions resets X87 stack (top-of-stack and tag-word), which is not done in Ghidra
     X87ResetOnMMX,
+    /// x87 exception flags contains a summary bit, which is set when any exception bit is set: [Intel, 8.1.3.3]
+    /// > The exception summary status flag (ES, bit 7) is set when any of the unmasked exception flags are set.
+    /// on CPUs, this is sometimes updated automatically, while Ghidra usually keeps it unchanged
+    X87ExceptionSummaryFlagOutdated,
     /// in Ghidra: SHR contains hardcoded `OF = 0`, while specification says
     /// > For the SHR instruction, the OF flag is set to the most-significant bit of the original operand.
     /// > The OF flag is affected only for 1-bit shifts [...]; otherwise, it is undefined.
@@ -97,6 +101,9 @@ impl ExplainedMismatch {
             ExplainedMismatch::RexNopDiscardsHighBytes => {
                 "NOPs with REX prefix end up as `REX XCHG eax, eax` in Ghidra, which causes the top 32 bits to be shaved off".to_string()
             }
+            ExplainedMismatch::X87ExceptionSummaryFlagOutdated => {
+                "Ghidra's implementation of X87 exception summary flag is outdated".to_string()
+            }
         }
     }
     pub fn name(&self) -> String {
@@ -113,6 +120,7 @@ impl ExplainedMismatch {
             ExplainedMismatch::EnterCPUWrongSigned => "EnterCPUWrongSigned".to_string(),
             ExplainedMismatch::MovSRegNonZeroExtended => "MovSRegNonZeroExtended".to_string(),
             ExplainedMismatch::RexNopDiscardsHighBytes => "RexNopDiscardsHighBytes".to_string(),
+            ExplainedMismatch::X87ExceptionSummaryFlagOutdated => "X87ExceptionSummaryFlagOutdated".to_string(),
         }
     }
 }
@@ -284,6 +292,14 @@ unsafe fn try_explain_mismatch(mismatch: &OkMismatch, state: &SystemState<X64Arc
         X87TagWordMismatch(ghidra, vm) => {
             if *ghidra == state.cpu.x87.tag_word && *vm == 0xff {
                 return Some(ExplainedMismatch::X87ResetOnMMX);
+            }
+            None
+        }
+        X87ExceptionFlagsMismatch(ghidra, vm) => {
+            let exception_summary_mask = 0xff << 7;
+            // if ghidra has maintained old value for ES, but everything else matches
+            if (ghidra & exception_summary_mask) == (state.cpu.x87.exception_flags & exception_summary_mask) && (vm & !exception_summary_mask) == (ghidra & !exception_summary_mask) {
+                return Some(ExplainedMismatch::X87ExceptionSummaryFlagOutdated);
             }
             None
         }
