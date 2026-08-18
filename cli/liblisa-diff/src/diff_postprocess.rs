@@ -493,6 +493,8 @@ enum InstrOperandReg {
     XmmReg(XmmReg),
     X87Reg(X87Reg),
     SReg(&'static str),
+    X87Status,
+    StackPush,
     Unk,
 }
 
@@ -744,13 +746,15 @@ impl XedInterface {
             XED_REG_XMM14 => InstrOperandReg::XmmReg(XmmReg::Reg(14)),
             XED_REG_XMM15 => InstrOperandReg::XmmReg(XmmReg::Reg(15)),
 
-            // known to be missing in liblisa, add them here to silence `error!` below
             XED_REG_ES => InstrOperandReg::SReg("ES"),
             XED_REG_CS => InstrOperandReg::SReg("CS"),
             XED_REG_SS => InstrOperandReg::SReg("SS"),
             XED_REG_DS => InstrOperandReg::SReg("DS"),
             XED_REG_FS => InstrOperandReg::SReg("FS"),
             XED_REG_GS => InstrOperandReg::SReg("GS"),
+
+            XED_REG_STACKPUSH => InstrOperandReg::StackPush,
+            XED_REG_X87STATUS => InstrOperandReg::X87Status,
 
             _ => {
                 error!("XED register {:?} not mapped to OpReg", reg);
