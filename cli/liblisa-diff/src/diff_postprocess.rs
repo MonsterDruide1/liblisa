@@ -1,8 +1,8 @@
 use crate::diff_types::{Diff, DiffResult};
 use crate::state_diff::{DifferenceType, OkMismatch};
-use liblisa::arch::{CpuState, x64::{GpReg, X64Arch, X64Flag, X64Reg, X87Reg, XmmReg}};
+use liblisa::arch::{CpuState, x64::{GpReg, X64Arch, X64Flag, X87Reg, XmmReg}};
 use liblisa::oracle::OracleError;
-use liblisa::state::SystemState;
+use liblisa::state::{Addr, SystemState};
 use thiserror::Error;
 use xed_sys::*;
 use log::error;
@@ -79,6 +79,9 @@ pub enum ExplainedMismatch {
     /// > XCHG (E)AX, (E)AX (encoded instruction byte is 90H) is an alias for NOP regardless of data size prefixes, including REX.W.
     /// => should still do nothing, Ghidra does not treat this special case right
     RexNopDiscardsHighBytes,
+    /// LAR is supposed to read GDT and permission tables, which just don't exist in Ghidra
+    /// instead, Ghidra models it as simple read from the address, which is plain wrong and results in many potential mismatches
+    LarNotImplemented,
 }
 
 impl ExplainedMismatch {
@@ -132,6 +135,9 @@ impl ExplainedMismatch {
             ExplainedMismatch::RexNopDiscardsHighBytes => {
                 "NOPs with REX prefix end up as `REX XCHG eax, eax` in Ghidra, which causes the top 32 bits to be shaved off".to_string()
             }
+            ExplainedMismatch::LarNotImplemented => {
+                "LAR is supposed to read GDT and permission tables, which just don't exist in Ghidra".to_string()
+            }
         }
     }
     pub fn name(&self) -> String {
@@ -152,6 +158,7 @@ impl ExplainedMismatch {
             ExplainedMismatch::EnterCPUWrongSigned => "EnterCPUWrongSigned".to_string(),
             ExplainedMismatch::MovSRegNonZeroExtended => "MovSRegNonZeroExtended".to_string(),
             ExplainedMismatch::RexNopDiscardsHighBytes => "RexNopDiscardsHighBytes".to_string(),
+            ExplainedMismatch::LarNotImplemented => "LarNotImplemented".to_string(),
         }
     }
 }
@@ -199,13 +206,25 @@ pub unsafe fn postprocess(diff: &Diff) -> (Vec<ExplainedMismatch>, Vec<Unexplain
                         unexplained.push(build_unexplained(i, j, diff.diff_type.clone(), &diff.example_before));
                     }
                 },
+                DifferenceType::ErrOk(OracleError::MemoryAccess(addr)) => {
+                    if is_xadd_register_conflict(&diff.example_before, None) {
+                        explained.push(ExplainedMismatch::RegisterConflict);
+                        continue;
+                    }
+                    let xed = get_xed_interface(&diff.example_before).expect("failed to get xed interface");
+                    if xed.get_iclass() == "LAR" && get_mem_operand_addr(&diff.example_before, &xed.get_operands()[1]).is_some_and(|(a, _)| addr.distance_between(Addr::new(a)) < 8) {
+                        explained.push(ExplainedMismatch::LarNotImplemented);
+                        continue;
+                    }
+                    unexplained.push(build_unexplained(i, j, diff.diff_type.clone(), &diff.example_before));
+                },
                 _ => {
                     if is_xadd_register_conflict(&diff.example_before, None) {
                         explained.push(ExplainedMismatch::RegisterConflict);
                         continue;
                     }
                     unexplained.push(build_unexplained(i, j, diff.diff_type.clone(), &diff.example_before));
-                }
+                },
             }
         }
     }
@@ -262,7 +281,7 @@ fn get_mapped_memory(state: &SystemState<X64Arch>, addr: u64, size: usize) -> Op
     }
     Some(data)
 }
-fn get_mem_operand(state: &SystemState<X64Arch>, mem_operand: &InstrOperand) -> Option<Vec<u8>> {
+fn get_mem_operand_addr(state: &SystemState<X64Arch>, mem_operand: &InstrOperand) -> Option<(u64, usize)> {
     // copy state and adjust RIP to point to after instruction
     // relevant for memory accesses with RIP-relative addressing (or using RIP as index, ...)
     let mut state = state.clone();
@@ -291,7 +310,11 @@ fn get_mem_operand(state: &SystemState<X64Arch>, mem_operand: &InstrOperand) -> 
     let displacement = disp.unwrap_or(0) as u64;
 
     let effective_addr = base_addr.wrapping_add(index_addr.wrapping_mul(scale_factor)).wrapping_add(displacement);
-    get_mapped_memory(&state, effective_addr, *width as usize)
+    Some((effective_addr, *width as usize))
+}
+fn get_mem_operand(state: &SystemState<X64Arch>, mem_operand: &InstrOperand) -> Option<Vec<u8>> {
+    let (addr, size) = get_mem_operand_addr(state, mem_operand)?;
+    get_mapped_memory(&state, addr, size)
 }
 
 unsafe fn get_xed_interface(state: &SystemState<X64Arch>) -> Result<XedInterface, XedError> {
@@ -314,6 +337,9 @@ unsafe fn try_explain_mismatch(mismatch: &OkMismatch, state: &SystemState<X64Arc
             }
             if is_xadd_register_conflict(state, None) {
                 return Some(ExplainedMismatch::RegisterConflict);
+            }
+            if *flag == X64Flag::Zf && xed.get_iclass() == "LAR" {
+                return Some(ExplainedMismatch::LarNotImplemented);
             }
             None
         }
@@ -410,6 +436,10 @@ unsafe fn try_explain_mismatch(mismatch: &OkMismatch, state: &SystemState<X64Arc
                 if *vm == reg_before && (ghidra & mask) == (reg_before & mask) && (ghidra & !mask) == 0 {
                     return Some(ExplainedMismatch::RexNopDiscardsHighBytes);
                 }
+            }
+
+            if is_target_reg && xed.get_iclass() == "LAR" {
+                return Some(ExplainedMismatch::LarNotImplemented);
             }
 
             None
