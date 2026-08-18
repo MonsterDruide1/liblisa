@@ -32,6 +32,13 @@ pub enum ExplainedMismatch {
     /// > The exception summary status flag (ES, bit 7) is set when any of the unmasked exception flags are set.
     /// on CPUs, this is sometimes updated automatically, while Ghidra usually keeps it unchanged
     X87ExceptionSummaryFlagOutdated,
+    /// From Ghidra's `ia.sinc`:
+    /// > attach variables [ xmmreg1_r xmmreg2_x ] [ XMM16 XMM17 XMM18 XMM19 XMM20 XMM21 XMM22 XMM23 ];
+    /// > XmmReg1:  xmmreg1_r  is rexRprefix=0 & evexRp=1 & xmmreg1_r             { export xmmreg1_r; }   // <- correct: requires evex
+    /// > XmmReg2:  xmmreg2_x is rexBprefix=0 & rexXprefix=1 & xmmreg2_x          { export xmmreg2_x; }   // <- incorrect: no evex required
+    /// this causes the `rex.X` prefix to change the target register in Ghidra, when it should have no effect instead.
+    /// for reference: XMM16..31 should only be accessible through VEX extensions
+    UpperXMMThroughRexX,
     /// in Ghidra: SHR contains hardcoded `OF = 0`, while specification says
     /// > For the SHR instruction, the OF flag is set to the most-significant bit of the original operand.
     /// > The OF flag is affected only for 1-bit shifts [...]; otherwise, it is undefined.
@@ -98,6 +105,9 @@ impl ExplainedMismatch {
             ExplainedMismatch::X87ExceptionSummaryFlagOutdated => {
                 "Ghidra's implementation of X87 exception summary flag is outdated".to_string()
             }
+            ExplainedMismatch::UpperXMMThroughRexX => {
+                "Ghidra's implementation of REX.X prefix allows access to upper XMM registers, while it should not".to_string()
+            }
             ExplainedMismatch::SHR1OF => {
                 "Ghidra's implementation of SHR instruction sets OF=0 for 1-bit shifts, while specification says it should be the most-significant bit of the original operand".to_string()
             }
@@ -133,6 +143,7 @@ impl ExplainedMismatch {
             ExplainedMismatch::X87ResetOnMMX => "X87ResetOnMMX".to_string(),
             ExplainedMismatch::X87TagWordRepresentationMismatch => "X87TagWordRepresentationMismatch".to_string(),
             ExplainedMismatch::X87ExceptionSummaryFlagOutdated => "X87ExceptionSummaryFlagOutdated".to_string(),
+            ExplainedMismatch::UpperXMMThroughRexX => "UpperXMMThroughRexX".to_string(),
             ExplainedMismatch::SHR1OF => "SHR1OF".to_string(),
             ExplainedMismatch::PSLLDQShiftIndependent => "PSLLDQShiftIndependent".to_string(),
             ExplainedMismatch::PINSRWMMXImmTooLarge => "PINSRWMMXImmTooLarge".to_string(),
@@ -433,6 +444,15 @@ unsafe fn try_explain_mismatch(mismatch: &OkMismatch, state: &SystemState<X64Arc
             }
             None
         }
+        XmmMismatch(_, _, _) => {
+            let xed = get_xed_interface(state).expect("failed to get xed interface");
+
+            // not really a way to check closer, as wrong register could be taken as input or output, and the result could be anything
+            if xed.is_rex() {
+                return Some(ExplainedMismatch::UpperXMMThroughRexX);
+            }
+            None
+        }
         _ => None,
     }
 }
@@ -546,6 +566,12 @@ impl InstrOperand {
             _ => false,
         }
     }
+    pub fn is_xmm_reg(&self, reg: &XmmReg) -> bool {
+        match self {
+            InstrOperand::Reg(InstrOperandReg::XmmReg(r)) => r == reg,
+            _ => false,
+        }
+    }
     pub fn get_reg_value(&self, state: &SystemState<X64Arch>) -> Option<u64> {
         match self {
             InstrOperand::Reg(InstrOperandReg::GpReg { reg, width, offset }) => {
@@ -612,6 +638,10 @@ impl XedInterface {
             flags.push(X64Flag::Of);
         }
         flags
+    }
+
+    pub unsafe fn is_rex(&self) -> bool {
+        xed3_operand_get_rexx(&self.inst) != 0
     }
 
     // note: this function is very specific to the current use case
