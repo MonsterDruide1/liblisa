@@ -56,7 +56,8 @@ pub enum ExplainedMismatch {
     /// XADD has the following setup in Ghidra: `Reg8 = m8; m8 = tmp;`
     /// when Reg8 and m8 use the same register, this will cause the second write to end up at a different location than intended
     /// the result can be anything from ineffective writes, shifted results up to a page fault (=> unmapped new target)
-    XADDRegisterConflict,
+    /// similar for BLSI (32 and 64-bit variants): `vexVVVV_r64 = -rm64 & rm64;`, followed by `CF = (rm64 != 0);` => wrong address
+    RegisterConflict,
     /// ENTER seems to be implemented incorrectly on Intel i5-8365U:
     /// it treats the first operand (imm16) as signed instead of unsigned
     /// Ghidra is correct here, and it seems to be limited to this single CPU from my test set
@@ -109,8 +110,8 @@ impl ExplainedMismatch {
             ExplainedMismatch::DivOutOfRange => {
                 "Division result is out-of-range of resulting type".to_string()
             }
-            ExplainedMismatch::XADDRegisterConflict => {
-                "Ghidra's implementation of XADD with register and memory operand using the same register can cause unexpected behavior".to_string()
+            ExplainedMismatch::RegisterConflict => {
+                "Using the same register for source and target with a memory operand can malfunction in Ghidra".to_string()
             }
             ExplainedMismatch::EnterCPUWrongSigned => {
                 "Intel i5-8365U CPU treats the first operand of ENTER as signed instead of unsigned, while Ghidra is correct".to_string()
@@ -136,7 +137,7 @@ impl ExplainedMismatch {
             ExplainedMismatch::PSLLDQShiftIndependent => "PSLLDQShiftIndependent".to_string(),
             ExplainedMismatch::PINSRWMMXImmTooLarge => "PINSRWMMXImmTooLarge".to_string(),
             ExplainedMismatch::DivOutOfRange => "DivOutOfRange".to_string(),
-            ExplainedMismatch::XADDRegisterConflict => "XADDRegisterConflict".to_string(),
+            ExplainedMismatch::RegisterConflict => "RegisterConflict".to_string(),
             ExplainedMismatch::EnterCPUWrongSigned => "EnterCPUWrongSigned".to_string(),
             ExplainedMismatch::MovSRegNonZeroExtended => "MovSRegNonZeroExtended".to_string(),
             ExplainedMismatch::RexNopDiscardsHighBytes => "RexNopDiscardsHighBytes".to_string(),
@@ -177,7 +178,7 @@ pub unsafe fn postprocess(diff: &Diff) -> (Vec<ExplainedMismatch>, Vec<Unexplain
                 },
                 DifferenceType::OkErr(OracleError::ComputationError) => {
                     if is_xadd_register_conflict(&diff.example_before, None) {
-                        explained.push(ExplainedMismatch::XADDRegisterConflict);
+                        explained.push(ExplainedMismatch::RegisterConflict);
                         continue;
                     }
                     let xed = get_xed_interface(&diff.example_before).expect("failed to get xed interface");
@@ -189,7 +190,7 @@ pub unsafe fn postprocess(diff: &Diff) -> (Vec<ExplainedMismatch>, Vec<Unexplain
                 },
                 _ => {
                     if is_xadd_register_conflict(&diff.example_before, None) {
-                        explained.push(ExplainedMismatch::XADDRegisterConflict);
+                        explained.push(ExplainedMismatch::RegisterConflict);
                         continue;
                     }
                     unexplained.push(build_unexplained(i, j, diff.diff_type.clone(), &diff.example_before));
@@ -300,6 +301,9 @@ unsafe fn try_explain_mismatch(mismatch: &OkMismatch, state: &SystemState<X64Arc
             if *flag == X64Flag::Of && xed.get_iclass() == "SHR" && xed.get_operands().get(1) == Some(&InstrOperand::ImmUnsigned(1)) {
                 return Some(ExplainedMismatch::SHR1OF);
             }
+            if is_xadd_register_conflict(state, None) {
+                return Some(ExplainedMismatch::RegisterConflict);
+            }
             None
         }
         X87TopOfStackMismatch(ghidra, vm) => {
@@ -361,7 +365,7 @@ unsafe fn try_explain_mismatch(mismatch: &OkMismatch, state: &SystemState<X64Arc
                 return Some(ExplainedMismatch::UndefinedReg(xed.get_iclass()));
             }
             if is_xadd_register_conflict(state, Some(reg)) {
-                return Some(ExplainedMismatch::XADDRegisterConflict);
+                return Some(ExplainedMismatch::RegisterConflict);
             }
 
             if reg == &GpReg::Rsp && xed.get_iclass() == "ENTER" && (|| {
@@ -425,7 +429,7 @@ unsafe fn try_explain_mismatch(mismatch: &OkMismatch, state: &SystemState<X64Arc
         }
         MemoryMismatch(_, _, _) => {
             if is_xadd_register_conflict(state, None) {
-                return Some(ExplainedMismatch::XADDRegisterConflict);
+                return Some(ExplainedMismatch::RegisterConflict);
             }
             None
         }
@@ -435,20 +439,24 @@ unsafe fn try_explain_mismatch(mismatch: &OkMismatch, state: &SystemState<X64Arc
 
 unsafe fn is_xadd_register_conflict(state: &SystemState<X64Arch>, mismatching_reg: Option<&GpReg>) -> bool {
     let xed = get_xed_interface(state).expect("failed to get xed interface");
-    if xed.get_iclass() != "XADD" {
-        return false;
-    }
     let ops = xed.get_operands();
-    let mem_operand = ops.get(0);
-    let reg_operand = ops.get(1);
-    let Some(InstrOperand::Mem{ seg, base, index, .. }) = mem_operand else {
-        error!("Unexpected first operand type for XADD: {:?}", mem_operand);
+    let (mem_operand, reg_operand) = if xed.get_iclass() == "XADD" {
+        (ops.get(0), ops.get(1))
+    } else if xed.get_iclass() == "BLSI" {
+        (ops.get(1), ops.get(0))
+    } else {
         return false;
     };
+
     let Some(InstrOperand::Reg(InstrOperandReg::GpReg { reg, .. })) = reg_operand else {
-        error!("Unexpected second operand type for XADD: {:?}", reg_operand);
+        error!("Unexpected reg_operand type for register conflict on {}: {:?}", xed.get_iclass(), reg_operand);
         return false;
     };
+    let Some(InstrOperand::Mem{ seg, base, index, .. }) = mem_operand else {
+        error!("Unexpected mem_operand type for register conflict on {}: {:?}", xed.get_iclass(), mem_operand);
+        return false;
+    };
+
     if mismatching_reg.is_some_and(|r| r != reg) {
         return false;
     }
