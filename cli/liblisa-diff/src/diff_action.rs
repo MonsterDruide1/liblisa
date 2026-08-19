@@ -377,10 +377,13 @@ impl DiffCommand {
                             continue;
                         };
 
+                        let (mut explained, mut unexplained) = (vec![], vec![]);
                         for diff in diffs {
-                            let (explained, unexplained) = try_explain_diff(diff, 0, 0);
-                            explanations_per_encoding.push((explained.len(), unexplained.len()));
+                            let (explained_, unexplained_) = try_explain_diff(diff, 0, 0);
+                            explained.extend(explained_);
+                            unexplained.extend(unexplained_);
                         }
+                        explanations_per_encoding.push((explained.len(), unexplained.len()));
                     }
                     assert!(explanations_per_encoding.len() == mismatch);
                     let full_explained = explanations_per_encoding.iter().filter(|(explained, unexplained)| *explained > 0 && *unexplained == 0).count();
