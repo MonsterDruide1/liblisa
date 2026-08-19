@@ -367,6 +367,7 @@ impl DiffCommand {
                                 }
                             }
                         }
+                        counts.sort_by_key(|(_, count)| std::cmp::Reverse(*count));
                         counts
                     };
                     assert!(failure_types.iter().map(|(_, count)| *count).sum::<usize>() == failure);
