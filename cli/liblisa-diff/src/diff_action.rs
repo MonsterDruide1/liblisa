@@ -376,6 +376,9 @@ impl DiffCommand {
                         let Some(DiffResult { diffs: Ok(diffs) }) = &item.result else {
                             continue;
                         };
+                        if diffs.is_empty() {
+                            continue;
+                        }
 
                         let (mut explained, mut unexplained) = (vec![], vec![]);
                         for diff in diffs {
