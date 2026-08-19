@@ -280,7 +280,7 @@ unsafe fn get_xed_interface(state: &SystemState<X64Arch>) -> Result<XedInterface
     XedInterface::new(get_instruction(state).unwrap_or(&[]))
 }
 
-unsafe fn try_explain_diff(diff: &Difference, item_index: usize, diff_index: usize) -> (Vec<ExplainedMismatch>, Vec<UnexplainedMismatch>) {
+pub unsafe fn try_explain_diff(diff: &Difference, item_index: usize, diff_index: usize) -> (Vec<ExplainedMismatch>, Vec<UnexplainedMismatch>) {
     match &diff.diff_type {
         DifferenceType::OkOk(ref mismatches) => {
             // NOTE: one instruction might have multiple mismatches, so multiple entries could end up in `explained` and `unexplained`!

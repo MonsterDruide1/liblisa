@@ -14,8 +14,9 @@ use liblisa::encoding::Encoding;
 use liblisa::semantics::default::computation::SynthesizedComputation;
 use liblisa_libcli::{clear_screen, threadpool::ThreadPool};
 
+use crate::diff_postprocess::try_explain_diff;
 use crate::{diff::create_state, diff_postprocess::postprocess_all, diff_types::DiffItem};
-use crate::diff_types::{Diff, DiffError, DiffRuntimeData};
+use crate::diff_types::{Diff, DiffError, DiffResult, DiffRuntimeData};
 use crate::state_diff;
 use crate::dummy_oracle_source;
 
@@ -370,11 +371,21 @@ impl DiffCommand {
                     };
                     assert!(failure_types.iter().map(|(_, count)| *count).sum::<usize>() == failure);
                     // layer 3: mismatch
-                    let (explained, unexplained) = postprocess_all(&diff);
-                    let explained_count = explained.len();
-                    let unexplained_count = unexplained.len();
-                    // one or more diffs (=potential explanations) per mismatch possible
-                    assert!(explained_count + unexplained_count >= mismatch);
+                    let mut explanations_per_encoding = vec![];
+                    for item in diff.items.iter() {
+                        let Some(DiffResult { diffs: Ok(diffs) }) = &item.result else {
+                            continue;
+                        };
+
+                        for diff in diffs {
+                            let (explained, unexplained) = try_explain_diff(diff, 0, 0);
+                            explanations_per_encoding.push((explained.len(), unexplained.len()));
+                        }
+                    }
+                    assert!(explanations_per_encoding.len() == mismatch);
+                    let full_explained = explanations_per_encoding.iter().filter(|(explained, unexplained)| *explained > 0 && *unexplained == 0).count();
+                    let unexplained = explanations_per_encoding.iter().filter(|(_, unexplained)| *unexplained > 0).count();
+                    assert!(full_explained + unexplained == mismatch);
 
                     // build output json
                     let output = serde_json::json!({
@@ -388,8 +399,8 @@ impl DiffCommand {
                                 "count": count,
                             })
                         }).collect::<Vec<_>>(),
-                        "explained_mismatches": explained_count,
-                        "unexplained_mismatches": unexplained_count,
+                        "explained_mismatches": full_explained,
+                        "unexplained_mismatches": unexplained,
                     });
                     println!("Output: {}", output);
                 }
