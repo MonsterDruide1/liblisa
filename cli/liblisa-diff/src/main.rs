@@ -36,7 +36,7 @@ impl CliCommand {
                 println!("");
                 println!("Postprocessing diffs...");
                 unsafe {
-                    let (explained, unexplained) = diff_postprocess::postprocess(
+                    let (explained, unexplained) = diff_postprocess::postprocess_all(
                         &diff_types::Diff { items: vec![diff_types::DiffItem {
                             instructions: vec![], description: "<missing>".to_string(),
                             result: Some(diff_types::DiffResult {diffs: Ok(state.diffs)})

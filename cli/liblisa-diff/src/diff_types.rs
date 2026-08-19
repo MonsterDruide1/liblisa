@@ -58,7 +58,7 @@ pub struct DiffThreadState {
     pub rng: Xoshiro256PlusPlus,
 }
 
-#[derive(Error, Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Error, Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum DiffError {
     // should not happen => results need to be checked for reason:
     #[error("??? instruction keeps faulting ???")]

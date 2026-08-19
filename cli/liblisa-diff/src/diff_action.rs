@@ -14,7 +14,7 @@ use liblisa::encoding::Encoding;
 use liblisa::semantics::default::computation::SynthesizedComputation;
 use liblisa_libcli::{clear_screen, threadpool::ThreadPool};
 
-use crate::{diff::create_state, diff_postprocess::postprocess, diff_types::DiffItem};
+use crate::{diff::create_state, diff_postprocess::postprocess_all, diff_types::DiffItem};
 use crate::diff_types::{Diff, DiffError, DiffRuntimeData};
 use crate::state_diff;
 use crate::dummy_oracle_source;
@@ -262,7 +262,7 @@ impl DiffCommand {
                 let file = File::open(self.state_path()).unwrap();
                 let diff: Diff = serde_json::from_reader(file).unwrap();
                 unsafe {
-                    let (explained, unexplained) = postprocess(&diff);
+                    let (explained, unexplained) = postprocess_all(&diff);
                     let mut counts = HashMap::new();
                     for explain in &explained {
                         *counts.entry(explain.name()).or_insert(0) += 1;

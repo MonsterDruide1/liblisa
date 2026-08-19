@@ -1,5 +1,5 @@
 use crate::diff_types::{Diff, DiffResult};
-use crate::state_diff::{DifferenceType, OkMismatch};
+use crate::state_diff::{Difference, DifferenceType, OkMismatch};
 use liblisa::arch::{CpuState, x64::{GpReg, X64Arch, X64Flag, X87Reg, XmmReg}};
 use liblisa::oracle::OracleError;
 use liblisa::state::{Addr, SystemState};
@@ -7,7 +7,7 @@ use thiserror::Error;
 use xed_sys::*;
 use log::error;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ExplainedMismatch {
     /// flag is undefined as per intel manual/XED, CPUs/Ghidra might implement it differently
     UndefinedFlag(String, X64Flag),  // (instruction, flag)
@@ -172,7 +172,7 @@ pub struct UnexplainedMismatch {
     pub iclass: String,
 }
 
-pub unsafe fn postprocess(diff: &Diff) -> (Vec<ExplainedMismatch>, Vec<UnexplainedMismatch>) {
+pub unsafe fn postprocess_all(diff: &Diff) -> (Vec<ExplainedMismatch>, Vec<UnexplainedMismatch>) {
     let mut explained = Vec::new();
     let mut unexplained = Vec::new();
 
@@ -182,50 +182,9 @@ pub unsafe fn postprocess(diff: &Diff) -> (Vec<ExplainedMismatch>, Vec<Unexplain
         };
 
         for (j, diff) in diffs.iter().enumerate() {
-            match &diff.diff_type {
-                DifferenceType::OkOk(ref mismatches) => {
-                    // NOTE: one instruction might have multiple mismatches, so multiple entries could end up in `explained` and `unexplained`!
-                    for mismatch in mismatches {
-                        if let Some(explanation) = try_explain_mismatch(mismatch, &diff.example_before) {
-                            explained.push(explanation);
-                        } else {
-                            let diff_type = DifferenceType::OkOk(vec![mismatch.clone()]);
-                            unexplained.push(build_unexplained(i, j, diff_type, &diff.example_before));
-                        }
-                    }
-                },
-                DifferenceType::OkErr(OracleError::ComputationError) => {
-                    if is_xadd_register_conflict(&diff.example_before, None) {
-                        explained.push(ExplainedMismatch::RegisterConflict);
-                        continue;
-                    }
-                    let xed = get_xed_interface(&diff.example_before).expect("failed to get xed interface");
-                    if ["DIV", "IDIV"].contains(&xed.get_iclass().as_str()) {
-                        explained.push(ExplainedMismatch::DivOutOfRange);
-                    } else {
-                        unexplained.push(build_unexplained(i, j, diff.diff_type.clone(), &diff.example_before));
-                    }
-                },
-                DifferenceType::ErrOk(OracleError::MemoryAccess(addr)) => {
-                    if is_xadd_register_conflict(&diff.example_before, None) {
-                        explained.push(ExplainedMismatch::RegisterConflict);
-                        continue;
-                    }
-                    let xed = get_xed_interface(&diff.example_before).expect("failed to get xed interface");
-                    if xed.get_iclass() == "LAR" && get_mem_operand_addr(&diff.example_before, &xed.get_operands()[1]).is_some_and(|(a, _)| addr.distance_between(Addr::new(a)) < 8) {
-                        explained.push(ExplainedMismatch::LarNotImplemented);
-                        continue;
-                    }
-                    unexplained.push(build_unexplained(i, j, diff.diff_type.clone(), &diff.example_before));
-                },
-                _ => {
-                    if is_xadd_register_conflict(&diff.example_before, None) {
-                        explained.push(ExplainedMismatch::RegisterConflict);
-                        continue;
-                    }
-                    unexplained.push(build_unexplained(i, j, diff.diff_type.clone(), &diff.example_before));
-                },
-            }
+            let (explained_mismatches, unexplained_mismatches) = try_explain_diff(diff, i, j);
+            explained.extend(explained_mismatches);
+            unexplained.extend(unexplained_mismatches);
         }
     }
 
@@ -321,7 +280,53 @@ unsafe fn get_xed_interface(state: &SystemState<X64Arch>) -> Result<XedInterface
     XedInterface::new(get_instruction(state).unwrap_or(&[]))
 }
 
-unsafe fn try_explain_mismatch(mismatch: &OkMismatch, state: &SystemState<X64Arch>) -> Option<ExplainedMismatch> {
+unsafe fn try_explain_diff(diff: &Difference, item_index: usize, diff_index: usize) -> (Vec<ExplainedMismatch>, Vec<UnexplainedMismatch>) {
+    match &diff.diff_type {
+        DifferenceType::OkOk(ref mismatches) => {
+            // NOTE: one instruction might have multiple mismatches, so multiple entries could end up in `explained` and `unexplained`!
+            let mut explained = vec![];
+            let mut unexplained = vec![];
+            for mismatch in mismatches {
+                if let Some(explanation) = try_explain_okmismatch(mismatch, &diff.example_before) {
+                    explained.push(explanation);
+                } else {
+                    let diff_type = DifferenceType::OkOk(vec![mismatch.clone()]);
+                    unexplained.push(build_unexplained(item_index, diff_index, diff_type, &diff.example_before));
+                }
+            }
+            explained.sort();
+            explained.dedup();
+            return (explained, unexplained);
+        },
+        DifferenceType::OkErr(OracleError::ComputationError) => {
+            if is_xadd_register_conflict(&diff.example_before, None) {
+                return (vec![ExplainedMismatch::RegisterConflict], vec![]);
+            }
+            let xed = get_xed_interface(&diff.example_before).expect("failed to get xed interface");
+            if ["DIV", "IDIV"].contains(&xed.get_iclass().as_str()) {
+                return (vec![ExplainedMismatch::DivOutOfRange], vec![]);
+            }
+        },
+        DifferenceType::ErrOk(OracleError::MemoryAccess(addr)) => {
+            if is_xadd_register_conflict(&diff.example_before, None) {
+                return (vec![ExplainedMismatch::RegisterConflict], vec![]);
+            }
+            let xed = get_xed_interface(&diff.example_before).expect("failed to get xed interface");
+            if xed.get_iclass() == "LAR" && get_mem_operand_addr(&diff.example_before, &xed.get_operands()[1]).is_some_and(|(a, _)| addr.distance_between(Addr::new(a)) < 8) {
+                return (vec![ExplainedMismatch::LarNotImplemented], vec![]);
+            }
+        },
+        _ => {
+            if is_xadd_register_conflict(&diff.example_before, None) {
+                return (vec![ExplainedMismatch::RegisterConflict], vec![]);
+            }
+        },
+    }
+    
+    return (vec![], vec![build_unexplained(item_index, diff_index, diff.diff_type.clone(), &diff.example_before)]);
+}
+
+unsafe fn try_explain_okmismatch(mismatch: &OkMismatch, state: &SystemState<X64Arch>) -> Option<ExplainedMismatch> {
     use OkMismatch::*;
     match mismatch {
         FlagsMismatch(flag, _, _) => {

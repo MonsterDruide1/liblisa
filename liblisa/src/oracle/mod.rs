@@ -23,7 +23,7 @@ pub use verifier::VerifyOracle;
 
 /// Error returned when an error occurs in an [`Oracle`] during instruction observation.
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-#[derive(Error, Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Error, Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum OracleError {
     #[error("Encountered a memory access at {:X}", .0)]
     /// Represents any page fault. Might be an instruction fetch or data fetch.
