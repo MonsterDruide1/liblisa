@@ -56,6 +56,7 @@ enum Verb {
         target: PathBuf,
     },
     PostprocessMismatches,
+    DumpSankey,
     DiscardResults {
         result: ResultType,
     },
@@ -334,6 +335,64 @@ impl DiffCommand {
                 println!("Exporting {} items...", diff.items.len());
                 let file = File::create(target).unwrap();
                 serde_json::to_writer(file, &diff).unwrap();
+            }
+            Verb::DumpSankey => {
+                unsafe {
+                    println!("Loading base data...");
+                    let file = File::open(self.state_path()).unwrap();
+                    let diff: Diff = serde_json::from_reader(file).unwrap();
+
+                    // layer 1
+                    let total = diff.items.len();
+
+                    // layer 2
+                    let ok = diff.items.iter().filter(|item| item.result.as_ref().map(|r| r.diffs.as_ref().map(|d| d.is_empty()).unwrap_or(false)).unwrap_or(false)).count();
+                    let mismatch = diff.items.iter().filter(|item| item.result.as_ref().map(|r| r.diffs.as_ref().map(|d| !d.is_empty()).unwrap_or(false)).unwrap_or(false)).count();
+                    let failure = diff.items.iter().filter(|item| item.result.as_ref().map(|r| r.diffs.is_err()).unwrap_or(false)).count();
+                    assert!(total == ok + mismatch + failure);
+
+                    // layer 3: failure
+                    let failure_types: Vec<(&DiffError, usize)> = {
+                        let mut counts = Vec::new();
+                        for item in &diff.items {
+                            if let Some(res) = &item.result {
+                                if let Err(e) = &res.diffs {
+                                    let entry = counts.iter_mut().find(|(err, _)| *err == e);
+                                    if let Some((_, count)) = entry {
+                                        *count += 1;
+                                    } else {
+                                        counts.push((e, 1));
+                                    }
+                                }
+                            }
+                        }
+                        counts
+                    };
+                    assert!(failure_types.iter().map(|(_, count)| *count).sum::<usize>() == failure);
+                    // layer 3: mismatch
+                    let (explained, unexplained) = postprocess_all(&diff);
+                    let explained_count = explained.len();
+                    let unexplained_count = unexplained.len();
+                    // one or more diffs (=potential explanations) per mismatch possible
+                    assert!(explained_count + unexplained_count >= mismatch);
+
+                    // build output json
+                    let output = serde_json::json!({
+                        "total": total,
+                        "ok": ok,
+                        "mismatch": mismatch,
+                        "failure": failure,
+                        "failure_types": failure_types.iter().map(|(err, count)| {
+                            serde_json::json!({
+                                "error": format!("{}", err),
+                                "count": count,
+                            })
+                        }).collect::<Vec<_>>(),
+                        "explained_mismatches": explained_count,
+                        "unexplained_mismatches": unexplained_count,
+                    });
+                    println!("Output: {}", output);
+                }
             }
             Verb::TestDiff { todo_index, diff_index } => {
                 println!("Loading base data...");
