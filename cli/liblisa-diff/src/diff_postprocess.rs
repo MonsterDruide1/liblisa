@@ -3,11 +3,12 @@ use crate::state_diff::{Difference, DifferenceType, OkMismatch};
 use liblisa::arch::{CpuState, x64::{GpReg, X64Arch, X64Flag, X87Reg, XmmReg}};
 use liblisa::oracle::OracleError;
 use liblisa::state::{Addr, SystemState};
+use serde::Serialize;
 use thiserror::Error;
 use xed_sys::*;
 use log::error;
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub enum ExplainedMismatch {
     /// flag is undefined as per intel manual/XED, CPUs/Ghidra might implement it differently
     UndefinedFlag(String, X64Flag),  // (instruction, flag)
@@ -163,7 +164,7 @@ impl ExplainedMismatch {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct UnexplainedMismatch {
     pub item_index: usize,
     pub diff_index: usize,

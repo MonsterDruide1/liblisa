@@ -13,8 +13,9 @@ use liblisa::{arch::x64::X64Arch, oracle::Oracle};
 use liblisa::encoding::Encoding;
 use liblisa::semantics::default::computation::SynthesizedComputation;
 use liblisa_libcli::{clear_screen, threadpool::ThreadPool};
+use serde::Serialize;
 
-use crate::diff_postprocess::try_explain_diff;
+use crate::diff_postprocess::{ExplainedMismatch, UnexplainedMismatch, try_explain_diff};
 use crate::{diff::create_state, diff_postprocess::postprocess_all, diff_types::DiffItem};
 use crate::diff_types::{Diff, DiffError, DiffResult, DiffRuntimeData};
 use crate::state_diff;
@@ -54,6 +55,9 @@ enum Verb {
     },
     Export {
         result: ResultType,
+        target: PathBuf,
+    },
+    ExportResults {
         target: PathBuf,
     },
     PostprocessMismatches,
@@ -336,6 +340,53 @@ impl DiffCommand {
                 println!("Exporting {} items...", diff.items.len());
                 let file = File::create(target).unwrap();
                 serde_json::to_writer(file, &diff).unwrap();
+            }
+            Verb::ExportResults { target } => {
+                println!("Loading base data...");
+                let file = File::open(self.state_path()).unwrap();
+                let diff: Diff = serde_json::from_reader(file).unwrap();
+
+                #[derive(Serialize)]
+                struct ResultItem {
+                    description: String,
+                    result: Result<(Vec<ExplainedMismatch>, Vec<UnexplainedMismatch>), DiffError>,
+                }
+
+                println!("Transforming results for {} items...", diff.items.len());
+                let results = diff.items.into_iter().map(|item| {
+                    let Some(res) = item.result else {
+                        panic!("Item {} has no result, cannot export results", item.description);
+                    };
+                    let result = match res.diffs {
+                        Ok(diffs) if diffs.is_empty() => {
+                            Ok((vec![], vec![]))
+                        },
+                        Ok(diffs) => {
+                            let (explained, unexplained) = unsafe {
+                                let mut explained = vec![];
+                                let mut unexplained = vec![];
+                                for (diff_index, diff) in diffs.iter().enumerate() {
+                                    let (explained_, unexplained_) = try_explain_diff(diff, 0, diff_index);
+                                    explained.extend(explained_);
+                                    unexplained.extend(unexplained_);
+                                }
+                                (explained, unexplained)
+                            };
+                            Ok((explained, unexplained))
+                        },
+                        Err(e) => {
+                            Err(e)
+                        },
+                    };
+                    ResultItem {
+                        description: item.description,
+                        result,
+                    }
+                }).collect::<Vec<_>>();
+
+                println!("Exporting {} results...", results.len());
+                let file = File::create(target).unwrap();
+                serde_json::to_writer(file, &results).unwrap();
             }
             Verb::DumpSankey => {
                 unsafe {
