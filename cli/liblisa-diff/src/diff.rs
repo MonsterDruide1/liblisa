@@ -16,7 +16,7 @@ use crate::diff_types::{DiffError, DiffThreadState};
 
 const MAX_MEMORY_ACCESS_OFFSET: u64 = 32;
 const MAX_DIFFS_TO_KEEP: usize = 123;
-const UNALIGNED_ACCESS_MAX_RETRIES: usize = 10;
+const UNALIGNED_ACCESS_MAX_RETRIES: usize = 400;
 // runtime difference: 2s vs. 24s on a single instruction with 2500 states
 // may only lead to false positives (= more mismatches reported), so is fine to enable
 const MEM_ACCESS_SCAN_GHIDRA_ONLY: bool = true;
