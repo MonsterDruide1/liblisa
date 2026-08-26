@@ -17,7 +17,7 @@ use crate::diff_types::{DiffError, DiffThreadState};
 
 const MAX_MEMORY_ACCESS_OFFSET: u64 = 32;
 const MAX_DIFFS_TO_KEEP: usize = 123;
-const UNALIGNED_ACCESS_MAX_RETRIES: usize = 400;
+const UNALIGNED_ACCESS_MAX_RETRIES: usize = 16*10;  // 1 / 16 is aligned, boost chance by *10 to avoid false positives due to bad RNG
 // runtime difference: 2s vs. 24s on a single instruction with 2500 states
 // may only lead to false positives (= more mismatches reported), so is fine to enable
 const MEM_ACCESS_SCAN_GHIDRA_ONLY: bool = true;
@@ -100,6 +100,7 @@ fn try_report_diff(diff: DifferenceType, before: &SystemState<X64Arch>, state: &
 enum RunResult {
     Ok,
     BothGP,
+    KeepsUnaligned,
     Unknown,
 }
 // returns whether the instruction was executed successfully (i.e. no page fault occurred) on both oracles
@@ -194,7 +195,7 @@ fn run_instr_single(
             unaligned_access_counter += 1;
             if unaligned_access_counter > UNALIGNED_ACCESS_MAX_RETRIES {
                 info!("Instruction keeps causing unaligned access ({} retries), aborting: {:?}", unaligned_access_counter, instr);
-                return Err(DiffError::UnalignedAccessKeepsFaulting);
+                return Ok(RunResult::KeepsUnaligned);
             }
             before = state_gen.randomize_new(&mut state.rng)?;
             continue;
@@ -317,7 +318,8 @@ fn run_instr_single(
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RunResultCounts {
     pub ok: usize,
-    pub both_gp: usize,
+    pub both_gp: usize,  // might happen due to bad RNG with registers, but also due to hardcoded addresses
+    pub keeps_unaligned: usize,  // might happen due to hardcoded, unaligned addresses
     pub unknown: usize,
 }
 pub fn run_instr(
@@ -327,6 +329,7 @@ pub fn run_instr(
 ) -> Result<RunResultCounts, DiffError> {
     let mut ok = 0;
     let mut gp = 0;
+    let mut keeps_unaligned = 0;
     let mut unk = 0;
     for _ in 0..num_states {
         let result = run_instr_single(instr, state)?;
@@ -337,13 +340,16 @@ pub fn run_instr(
             RunResult::BothGP => {
                 gp += 1;
             }
+            RunResult::KeepsUnaligned => {
+                keeps_unaligned += 1;
+            }
             RunResult::Unknown => {
                 unk += 1;
             }
         }
     }
 
-    Ok(RunResultCounts { ok, both_gp: gp, unknown: unk })
+    Ok(RunResultCounts { ok, both_gp: gp, keeps_unaligned, unknown: unk })
 }
 
 pub fn create_state() -> DiffThreadState {

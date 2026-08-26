@@ -29,7 +29,7 @@ impl DiffRequest {
         };
         let mut state = &mut oracle.state;
 
-        let mut counts = RunResultCounts { ok: 0, both_gp: 0, unknown: 0 };
+        let mut counts = RunResultCounts { ok: 0, both_gp: 0, keeps_unaligned: 0, unknown: 0 };
         for instr in &self.item.instructions {
             let counts_ = run_instr(instr, NUM_STATES_PER_INSTR, &mut state);
             let counts_ = match counts_ {
@@ -40,6 +40,7 @@ impl DiffRequest {
             };
             counts.ok += counts_.ok;
             counts.both_gp += counts_.both_gp;
+            counts.keeps_unaligned += counts_.keeps_unaligned;
             counts.unknown += counts_.unknown;
         }
         if counts.unknown > 0 {
@@ -48,6 +49,9 @@ impl DiffRequest {
         }
         if counts.ok == 0 && counts.both_gp > 0 {
             return DiffResult { diffs: Err(DiffError::InstructionKeepsGeneralFaulting) };
+        }
+        if counts.ok == 0 && counts.keeps_unaligned > 0 {
+            return DiffResult { diffs: Err(DiffError::UnalignedAccessKeepsFaulting) };
         }
         let diffs = std::mem::take(&mut state.diffs);
         return DiffResult { diffs: Ok(diffs) };

@@ -49,8 +49,6 @@ pub enum DiffError {
     // should not happen => results need to be checked for reason:
     #[error("??? instruction keeps faulting ???")]
     InstructionKeepsFaulting,
-    #[error("??? unaligned access keeps faulting ???")]
-    UnalignedAccessKeepsFaulting,
 
     // cannot be handled, abort diffing and report to user:
     #[error("randomization error: {0}")]
@@ -65,6 +63,8 @@ pub enum DiffError {
     GhidraEmulationUnimplemented,
     #[error("keeps throwing GP errors")]
     InstructionKeepsGeneralFaulting,
+    #[error("keeps throwing GPs due to unaligned addresses")]
+    UnalignedAccessKeepsFaulting,
 }
 
 impl From<RandomizationError> for DiffError {
