@@ -16,8 +16,9 @@ use liblisa_libcli::{clear_screen, threadpool::ThreadPool};
 use serde::Serialize;
 
 use crate::diff_postprocess::{ExplainedMismatch, UnexplainedMismatch, try_explain_diff};
+use crate::diff_work::DiffRuntimeData;
 use crate::{diff::create_state, diff_postprocess::postprocess_all, diff_types::DiffItem};
-use crate::diff_types::{Diff, DiffError, DiffResult, DiffRuntimeData};
+use crate::diff_types::{Diff, DiffError, DiffResult};
 use crate::state_diff;
 use crate::dummy_oracle_source;
 
@@ -112,12 +113,7 @@ impl DiffCommand {
                 let file = File::open(self.state_path()).unwrap();
                 let diff: Mutex<(Diff, DiffRuntimeData)> = Mutex::new({
                     let diff: Diff = serde_json::from_reader(file).unwrap();
-                    let todo = (0..diff.items.len()).filter(|&i| diff.items[i].result.is_none()).collect();
-                    let runtime_data = DiffRuntimeData {
-                        last_check: Instant::now(),
-                        pending: Vec::new(),
-                        todo,
-                    };
+                    let runtime_data = DiffRuntimeData::from_diff(&diff);
                     (diff, runtime_data)
                 });
 

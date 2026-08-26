@@ -13,12 +13,17 @@ use liblisa_libcli::threadpool::work::Work;
 use crate::diff::{RunResultCounts, run_instr};
 use crate::diff_types::*;
 use crate::dummy_oracle_source::DummyOracle;
-use crate::state_diff::Difference;
 
+#[derive(Clone, Debug)]
+pub struct DiffRequest {
+    pub at: Instant,
+    pub item_index: usize,
+    pub item: DiffItem,
+}
 impl DiffRequest {
     pub fn diff<A: Arch, O: Oracle<A>, R: Rng>(
         &self, oracle: &mut O, rng: &mut R,
-    ) -> Result<Vec<Difference>, DiffError> {
+    ) -> DiffResult {
         let oracle: &mut DummyOracle<X64Arch> = unsafe {
             &mut *(oracle as *mut O as *mut DummyOracle<X64Arch>)
         };
@@ -26,20 +31,26 @@ impl DiffRequest {
 
         let mut counts = RunResultCounts { ok: 0, both_gp: 0, unknown: 0 };
         for instr in &self.item.instructions {
-            let counts_ = run_instr(instr, NUM_STATES_PER_INSTR, &mut state)?;
+            let counts_ = run_instr(instr, NUM_STATES_PER_INSTR, &mut state);
+            let counts_ = match counts_ {
+                Ok(counts_) => counts_,
+                Err(e) => {
+                    return DiffResult { diffs: Err(e) };
+                }
+            };
             counts.ok += counts_.ok;
             counts.both_gp += counts_.both_gp;
             counts.unknown += counts_.unknown;
         }
         if counts.unknown > 0 {
             error!("Instruction keeps throwing unknown errors: {} (ok={}, both_gp={}, unknown={})", self.item.description, counts.ok, counts.both_gp, counts.unknown);
-            return Err(DiffError::InstructionKeepsFaulting);
+            return DiffResult { diffs: Err(DiffError::InstructionKeepsFaulting) };
         }
         if counts.both_gp > counts.ok {
-            return Err(DiffError::InstructionKeepsGeneralFaulting);
+            return DiffResult { diffs: Err(DiffError::InstructionKeepsGeneralFaulting) };
         }
         let diffs = std::mem::take(&mut state.diffs);
-        Ok(diffs)
+        return DiffResult { diffs: Ok(diffs) };
     }
 }
 
@@ -47,6 +58,22 @@ impl DiffRequest {
 pub struct DiffArtifact {
     pub ms_taken: u128,
     pub result: DiffResult,
+}
+
+pub struct DiffRuntimeData {
+    last_check: Instant,
+    todo: Vec<usize>,
+    pending: Vec<usize>,
+}
+impl DiffRuntimeData {
+    pub fn from_diff(diff: &Diff) -> Self {
+        let todo = (0..diff.items.len()).filter(|&i| diff.items[i].result.is_none()).collect();
+        DiffRuntimeData {
+            last_check: Instant::now(),
+            pending: Vec::new(),
+            todo,
+        }
+    }
 }
 
 impl<A: Arch> Work<A, ()> for Diff
@@ -112,8 +139,7 @@ impl<A: Arch> Work<A, ()> for Diff
 
     fn run<O: Oracle<A>>(oracle: &mut O, _cache: &(), request: &Self::Request) -> Self::Result {
         println!("Diffing [{}] {}", request.item_index, request.item.description);
-        let result = request.diff(oracle, &mut rand::thread_rng());
-        DiffResult { diffs: result }
+        request.diff(oracle, &mut rand::thread_rng())
     }
 }
 

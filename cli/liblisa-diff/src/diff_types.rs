@@ -1,4 +1,3 @@
-use std::time::Instant;
 use rand_xoshiro::Xoshiro256PlusPlus;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -18,13 +17,6 @@ pub const NUM_INSTRS_PER_ENCODING: usize = 100;
 pub const NUM_STATES_PER_INSTR: usize = 250;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct DiffItem {
-    pub instructions: Vec<Instruction>,
-    pub description: String,
-    pub result: Option<DiffResult>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Diff {
     #[serde(default)]
     pub runtime_ms: u128,
@@ -32,17 +24,11 @@ pub struct Diff {
     pub items: Vec<DiffItem>,
 }
 
-pub struct DiffRuntimeData {
-    pub last_check: Instant,
-    pub todo: Vec<usize>,
-    pub pending: Vec<usize>,
-}
-
-#[derive(Clone, Debug)]
-pub struct DiffRequest {
-    pub at: Instant,
-    pub item_index: usize,
-    pub item: DiffItem,
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DiffItem {
+    pub instructions: Vec<Instruction>,
+    pub description: String,
+    pub result: Option<DiffResult>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
