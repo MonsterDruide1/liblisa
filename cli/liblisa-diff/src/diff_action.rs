@@ -502,12 +502,9 @@ impl DiffCommand {
                     }
                     None => {
                         println!("Testing todo index {todo_index} entirely: {}", todo.description);
-                        let Some(result) = &todo.result else {
-                            println!("  Result: ???");
-                            println!("    Error: No result for this todo index");
-                            return;
-                        };
-                        println!("  Previous Result: {:?}", result.diffs);
+                        if let Some(result) = &todo.result {
+                            println!("  Previous Result: {:?}", result.diffs);
+                        }
                         let mut state = create_state();
                         let mut counts = RunResultCounts { ok: 0, both_gp: 0, keeps_unaligned: 0, unknown: 0 };
                         for instr in &todo.instructions {
