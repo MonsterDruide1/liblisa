@@ -19,7 +19,7 @@ use crate::diff::{RunResultCounts, run_instr};
 use crate::diff_postprocess::{ExplainedMismatch, UnexplainedMismatch, try_explain_diff};
 use crate::diff_work::DiffRuntimeData;
 use crate::{diff::create_state, diff_postprocess::postprocess_all, diff_types::DiffItem};
-use crate::diff_types::{Diff, DiffError, DiffResult, NUM_STATES_PER_INSTR};
+use crate::diff_types::{Diff, DiffError, NUM_STATES_PER_INSTR};
 use crate::state_diff;
 use crate::dummy_oracle_source;
 
@@ -63,7 +63,6 @@ enum Verb {
         target: PathBuf,
     },
     PostprocessMismatches,
-    DumpSankey,
     DiscardResults {
         result: ResultType,
     },
@@ -384,81 +383,6 @@ impl DiffCommand {
                 println!("Exporting {} results...", results.len());
                 let file = File::create(target).unwrap();
                 serde_json::to_writer(file, &results).unwrap();
-            }
-            Verb::DumpSankey => {
-                unsafe {
-                    println!("Loading base data...");
-                    let file = File::open(self.state_path()).unwrap();
-                    let diff: Diff = serde_json::from_reader(file).unwrap();
-
-                    // layer 1
-                    let total = diff.items.len();
-
-                    // layer 2
-                    let ok = diff.items.iter().filter(|item| item.result.as_ref().map(|r| r.diffs.as_ref().map(|d| d.is_empty()).unwrap_or(false)).unwrap_or(false)).count();
-                    let mismatch = diff.items.iter().filter(|item| item.result.as_ref().map(|r| r.diffs.as_ref().map(|d| !d.is_empty()).unwrap_or(false)).unwrap_or(false)).count();
-                    let failure = diff.items.iter().filter(|item| item.result.as_ref().map(|r| r.diffs.is_err()).unwrap_or(false)).count();
-                    assert!(total == ok + mismatch + failure);
-
-                    // layer 3: failure
-                    let failure_types: Vec<(&DiffError, usize)> = {
-                        let mut counts = Vec::new();
-                        for item in &diff.items {
-                            if let Some(res) = &item.result {
-                                if let Err(e) = &res.diffs {
-                                    let entry = counts.iter_mut().find(|(err, _)| *err == e);
-                                    if let Some((_, count)) = entry {
-                                        *count += 1;
-                                    } else {
-                                        counts.push((e, 1));
-                                    }
-                                }
-                            }
-                        }
-                        counts.sort_by_key(|(_, count)| std::cmp::Reverse(*count));
-                        counts
-                    };
-                    assert!(failure_types.iter().map(|(_, count)| *count).sum::<usize>() == failure);
-                    // layer 3: mismatch
-                    let mut explanations_per_encoding = vec![];
-                    for item in diff.items.iter() {
-                        let Some(DiffResult { diffs: Ok(diffs) }) = &item.result else {
-                            continue;
-                        };
-                        if diffs.is_empty() {
-                            continue;
-                        }
-
-                        let (mut explained, mut unexplained) = (vec![], vec![]);
-                        for diff in diffs {
-                            let (explained_, unexplained_) = try_explain_diff(diff, 0, 0);
-                            explained.extend(explained_);
-                            unexplained.extend(unexplained_);
-                        }
-                        explanations_per_encoding.push((explained.len(), unexplained.len()));
-                    }
-                    assert!(explanations_per_encoding.len() == mismatch);
-                    let full_explained = explanations_per_encoding.iter().filter(|(explained, unexplained)| *explained > 0 && *unexplained == 0).count();
-                    let unexplained = explanations_per_encoding.iter().filter(|(_, unexplained)| *unexplained > 0).count();
-                    assert!(full_explained + unexplained == mismatch);
-
-                    // build output json
-                    let output = serde_json::json!({
-                        "total": total,
-                        "ok": ok,
-                        "mismatch": mismatch,
-                        "failure": failure,
-                        "failure_types": failure_types.iter().map(|(err, count)| {
-                            serde_json::json!({
-                                "error": format!("{}", err),
-                                "count": count,
-                            })
-                        }).collect::<Vec<_>>(),
-                        "explained_mismatches": full_explained,
-                        "unexplained_mismatches": unexplained,
-                    });
-                    println!("Output: {}", output);
-                }
             }
             Verb::TestDiff { todo_index, diff_index } => {
                 println!("Loading base data...");
