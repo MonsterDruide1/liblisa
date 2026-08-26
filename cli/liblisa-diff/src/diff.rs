@@ -17,7 +17,7 @@ use crate::diff_types::{DiffError, DiffThreadState};
 
 const MAX_MEMORY_ACCESS_OFFSET: u64 = 32;
 const MAX_DIFFS_TO_KEEP: usize = 123;
-const UNALIGNED_ACCESS_MAX_RETRIES: usize = 16*10;  // 1 / 16 is aligned, boost chance by *10 to avoid false positives due to bad RNG
+const UNALIGNED_ACCESS_MAX_RETRIES: usize = 64*10;  // 1 / 64 is max required alignment, boost chance by *10 to avoid false positives due to bad RNG
 // runtime difference: 2s vs. 24s on a single instruction with 2500 states
 // may only lead to false positives (= more mismatches reported), so is fine to enable
 const MEM_ACCESS_SCAN_GHIDRA_ONLY: bool = true;
@@ -163,16 +163,16 @@ fn run_instr_single(
             }
         }
 
-        // special case: if CPU throws General Fault due to address that is not 16-byte aligned and Ghidra reports
-        // - MemoryAccess with non-16-divisible address (=> unaligned access address),
+        // special case: if CPU throws General Fault due to address that is not 64-byte aligned and Ghidra reports
+        // - MemoryAccess with non-64-divisible address (=> unaligned access address),
         // - MemoryAccess on first byte of page directly after a mapped page (=> flows into next page),
         // - reports no failure at all (=> access is on already-mapped page)
         // it's because Ghidra doesn't handle unaligned accesses properly
         // => randomize new state and try again
         let is_unaligned_access = match (&r1, &r2) {
             (Err(OracleError::MemoryAccess(addr)), Err(OracleError::GeneralFault)) => {
-                if addr.as_u64() % 16 != 0 {
-                    // non-16-byte-aligned access address => unaligned access itself
+                if addr.as_u64() % 64 != 0 {
+                    // non-64-byte-aligned access address => unaligned access itself
                     true
                 } else if addr.as_u64() == addr.page::<X64Arch>().start_addr().as_u64() {
                     // potentially first byte after mapped page with unaligned access
