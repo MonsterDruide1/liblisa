@@ -4,12 +4,13 @@ use liblisa::arch::{Arch, x64::X64Arch};
 use liblisa::encoding::Encoding;
 use liblisa::oracle::Oracle;
 use liblisa::semantics::default::computation::SynthesizedComputation;
+use log::error;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
 use liblisa_libcli::threadpool::work::Work;
 
-use crate::diff::run_instr;
+use crate::diff::{RunResultCounts, run_instr};
 use crate::diff_types::*;
 use crate::dummy_oracle_source::DummyOracle;
 use crate::state_diff::Difference;
@@ -23,8 +24,19 @@ impl DiffRequest {
         };
         let mut state = &mut oracle.state;
 
+        let mut counts = RunResultCounts { ok: 0, both_gp: 0, unknown: 0 };
         for instr in &self.item.instructions {
-            run_instr(instr, NUM_STATES_PER_INSTR, &mut state)?;
+            let counts_ = run_instr(instr, NUM_STATES_PER_INSTR, &mut state)?;
+            counts.ok += counts_.ok;
+            counts.both_gp += counts_.both_gp;
+            counts.unknown += counts_.unknown;
+        }
+        if counts.unknown > 0 {
+            error!("Instruction keeps throwing unknown errors: {} (ok={}, both_gp={}, unknown={})", self.item.description, counts.ok, counts.both_gp, counts.unknown);
+            return Err(DiffError::InstructionKeepsFaulting);
+        }
+        if counts.both_gp > counts.ok {
+            return Err(DiffError::InstructionKeepsGeneralFaulting);
         }
         let diffs = std::mem::take(&mut state.diffs);
         Ok(diffs)

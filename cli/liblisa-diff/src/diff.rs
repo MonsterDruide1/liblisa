@@ -9,6 +9,7 @@ use liblisa::arch::{Arch, CpuState, x64::{GpReg, X64Arch}};
 use liblisa::encoding::dataflows::{AccessKind, AddressComputation, Dest, Inputs, MemoryAccess, MemoryAccesses, Size, Source};
 use liblisa::oracle::{Oracle, OracleError, OracleSource};
 use liblisa::state::{Addr, Page, Permissions, SystemState, random::{StateGen, randomized_bytes}};
+use serde::{Deserialize, Serialize};
 
 use crate::dummy_oracle_source::DoubleCheckedMappableArea;
 use crate::state_diff::{self, Difference, DifferenceType};
@@ -17,7 +18,6 @@ use crate::diff_types::{DiffError, DiffThreadState};
 const MAX_MEMORY_ACCESS_OFFSET: u64 = 32;
 const MAX_DIFFS_TO_KEEP: usize = 123;
 const UNALIGNED_ACCESS_MAX_RETRIES: usize = 400;
-const GENERAL_FAULT_MAX_RETRIES: usize = 1000;
 // runtime difference: 2s vs. 24s on a single instruction with 2500 states
 // may only lead to false positives (= more mismatches reported), so is fine to enable
 const MEM_ACCESS_SCAN_GHIDRA_ONLY: bool = true;
@@ -311,33 +311,21 @@ fn run_instr_single(
     }
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RunResultCounts {
+    pub ok: usize,
+    pub both_gp: usize,
+    pub unknown: usize,
+}
 pub fn run_instr(
     instr: &Instruction,
     num_states: usize,
     state: &mut DiffThreadState
-) -> Result<(), DiffError> {
+) -> Result<RunResultCounts, DiffError> {
     let mut ok = 0;
     let mut gp = 0;
     let mut unk = 0;
-    while ok < num_states {
-        if unk > num_states*3 {
-            if ok > 0 {
-                info!("Instruction keeps faulting ({} ok, {} err), continuing: {:?}", ok, unk, instr);
-                unk = 0;
-            } else {
-                error!("Instruction keeps faulting ({} ok, {} err), aborting: {:?}", ok, unk, instr);
-                return Err(DiffError::InstructionKeepsFaulting);
-            }
-        }
-        if gp > GENERAL_FAULT_MAX_RETRIES {
-            if ok > 0 {
-                info!("Instruction keeps causing General Fault ({} ok, {} err), continuing: {:?}", ok, gp, instr);
-                gp = 0;
-            } else {
-                info!("Instruction keeps causing General Fault ({} ok, {} err), aborting: {:?}", ok, gp, instr);
-                return Err(DiffError::InstructionKeepsGeneralFaulting);
-            }
-        }
+    for _ in 0..num_states {
         let result = run_instr_single(instr, state)?;
         match result {
             RunResult::Ok => {
@@ -352,7 +340,7 @@ pub fn run_instr(
         }
     }
 
-    Ok(())
+    Ok(RunResultCounts { ok, both_gp: gp, unknown: unk })
 }
 
 pub fn create_state() -> DiffThreadState {
