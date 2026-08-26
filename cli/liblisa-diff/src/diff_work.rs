@@ -46,7 +46,7 @@ impl DiffRequest {
             error!("Instruction keeps throwing unknown errors: {} (ok={}, both_gp={}, unknown={})", self.item.description, counts.ok, counts.both_gp, counts.unknown);
             return DiffResult { diffs: Err(DiffError::InstructionKeepsFaulting) };
         }
-        if counts.both_gp > counts.ok {
+        if counts.ok == 0 && counts.both_gp > 0 {
             return DiffResult { diffs: Err(DiffError::InstructionKeepsGeneralFaulting) };
         }
         let diffs = std::mem::take(&mut state.diffs);

@@ -15,10 +15,11 @@ use liblisa::semantics::default::computation::SynthesizedComputation;
 use liblisa_libcli::{clear_screen, threadpool::ThreadPool};
 use serde::Serialize;
 
+use crate::diff::{RunResultCounts, run_instr};
 use crate::diff_postprocess::{ExplainedMismatch, UnexplainedMismatch, try_explain_diff};
 use crate::diff_work::DiffRuntimeData;
 use crate::{diff::create_state, diff_postprocess::postprocess_all, diff_types::DiffItem};
-use crate::diff_types::{Diff, DiffError, DiffResult};
+use crate::diff_types::{Diff, DiffError, DiffResult, NUM_STATES_PER_INSTR};
 use crate::state_diff;
 use crate::dummy_oracle_source;
 
@@ -68,7 +69,7 @@ enum Verb {
     },
     TestDiff {
         todo_index: usize,
-        diff_index: usize,
+        diff_index: Option<usize>,
     },
 }
 
@@ -466,36 +467,70 @@ impl DiffCommand {
 
                 let todo = &diff.items[*todo_index];
 
-                println!("Testing todo index {todo_index}, diff index {diff_index}: {}", todo.description);
-                let Some(result) = &todo.result else {
-                    println!("  Result: ???");
-                    println!("    Error: No result for this todo index");
-                    return;
-                };
-                let diffs = match &result.diffs {
-                    Ok(diffs) => diffs,
-                    Err(e) => {
-                        println!("  Result: FAILURE");
-                        println!("    Error: {}", e);
-                        println!("  Cannot test diff, no state to run!");
-                        return;
-                    }
-                };
-                let diff = diffs.get(*diff_index).unwrap_or_else(|| {
-                    panic!("Diff index {diff_index} is out of bounds for todo index {todo_index} ({} diffs)", diffs.len());
-                });
-                
-                let mut state = create_state();
-                println!("Before: {:?}", diff.example_before);
-                println!("Running instruction...");
-                let r1 = state.o1.observe(&diff.example_before);
-                let r2 = state.o2.observe(&diff.example_before);
-                let diffs = state_diff::compare(&r1, &r2);
+                match diff_index {
+                    Some(diff_index) => {
+                        println!("Testing todo index {todo_index}, diff index {diff_index}: {}", todo.description);
+                        let Some(result) = &todo.result else {
+                            println!("  Result: ???");
+                            println!("    Error: No result for this todo index");
+                            return;
+                        };
+                        let diffs = match &result.diffs {
+                            Ok(diffs) => diffs,
+                            Err(e) => {
+                                println!("  Result: FAILURE");
+                                println!("    Error: {}", e);
+                                println!("  Cannot test diff, no state to run!");
+                                return;
+                            }
+                        };
+                        let diff = diffs.get(*diff_index).unwrap_or_else(|| {
+                            panic!("Diff index {diff_index} is out of bounds for todo index {todo_index} ({} diffs)", diffs.len());
+                        });
+                        
+                        let mut state = create_state();
+                        println!("Before: {:?}", diff.example_before);
+                        println!("Running instruction...");
+                        let r1 = state.o1.observe(&diff.example_before);
+                        let r2 = state.o2.observe(&diff.example_before);
+                        let diffs = state_diff::compare(&r1, &r2);
 
-                println!("  Ghidra result: {:?}", r1);
-                println!("  VM result: {:?}", r2);
-                println!("  Recorded diff: {:?}", diff.diff_type);
-                println!("  New diffs: {:?}", diffs);
+                        println!("  Ghidra result: {:?}", r1);
+                        println!("  VM result: {:?}", r2);
+                        println!("  Recorded diff: {:?}", diff.diff_type);
+                        println!("  New diffs: {:?}", diffs);
+                    }
+                    None => {
+                        println!("Testing todo index {todo_index} entirely: {}", todo.description);
+                        let Some(result) = &todo.result else {
+                            println!("  Result: ???");
+                            println!("    Error: No result for this todo index");
+                            return;
+                        };
+                        println!("  Previous Result: {:?}", result.diffs);
+                        let mut state = create_state();
+                        let mut counts = RunResultCounts { ok: 0, both_gp: 0, unknown: 0 };
+                        for instr in &todo.instructions {
+                            let counts_ = run_instr(instr, NUM_STATES_PER_INSTR, &mut state);
+                            let counts_ = match counts_ {
+                                Ok(counts_) => counts_,
+                                Err(e) => {
+                                    println!("  Result: FAILURE");
+                                    println!("    Error: {}", e);
+                                    break;
+                                }
+                            };
+                            counts.ok += counts_.ok;
+                            counts.both_gp += counts_.both_gp;
+                            counts.unknown += counts_.unknown;
+                        }
+                        println!("  Result: OK");
+                        println!("    OK: {}", counts.ok);
+                        println!("    Both GP: {}", counts.both_gp);
+                        println!("    Unknown: {}", counts.unknown);
+                        println!("  Recorded diffs: {:?}", state.diffs);
+                    }
+                }
             }
         }
     }
