@@ -77,6 +77,8 @@ pub enum DiffError {
     GhidraVarnodeTooLarge,
     #[error("Ghidra reported unimplemented emulation")]
     GhidraEmulationUnimplemented,
+    #[error("keeps throwing GP errors")]
+    InstructionKeepsGeneralFaulting,
 }
 
 impl From<RandomizationError> for DiffError {

@@ -17,6 +17,7 @@ use crate::diff_types::{DiffError, DiffThreadState};
 const MAX_MEMORY_ACCESS_OFFSET: u64 = 32;
 const MAX_DIFFS_TO_KEEP: usize = 123;
 const UNALIGNED_ACCESS_MAX_RETRIES: usize = 400;
+const GENERAL_FAULT_MAX_RETRIES: usize = 1000;
 // runtime difference: 2s vs. 24s on a single instruction with 2500 states
 // may only lead to false positives (= more mismatches reported), so is fine to enable
 const MEM_ACCESS_SCAN_GHIDRA_ONLY: bool = true;
@@ -96,11 +97,16 @@ fn try_report_diff(diff: DifferenceType, before: &SystemState<X64Arch>, state: &
     true
 }
 
+enum RunResult {
+    Ok,
+    BothGP,
+    Unknown,
+}
 // returns whether the instruction was executed successfully (i.e. no page fault occurred) on both oracles
 fn run_instr_single(
     instr: &Instruction,
     state: &mut DiffThreadState,
-) -> Result<bool, DiffError> {
+) -> Result<RunResult, DiffError> {
     let accesses: MemoryAccesses<X64Arch> = MemoryAccesses {
         instr: *instr,
         memory: vec![MemoryAccess {
@@ -295,7 +301,13 @@ fn run_instr_single(
         trace!("  Ghidra result: {:?}", r1);
         trace!("  VM result: {:?}", r2);
 
-        return Ok(r1.is_ok() && r2.is_ok())
+        if r1.is_ok() && r2.is_ok() {
+            return Ok(RunResult::Ok);
+        } else if r1 == Err(OracleError::GeneralFault) && r2 == Err(OracleError::GeneralFault) {
+            return Ok(RunResult::BothGP);
+        } else {
+            return Ok(RunResult::Unknown);
+        }
     }
 }
 
@@ -305,21 +317,38 @@ pub fn run_instr(
     state: &mut DiffThreadState
 ) -> Result<(), DiffError> {
     let mut ok = 0;
-    let mut err = 0;
+    let mut gp = 0;
+    let mut unk = 0;
     while ok < num_states {
-        if err > num_states*3 {
+        if unk > num_states*3 {
             if ok > 0 {
-                info!("Instruction keeps faulting ({} ok, {} err), continuing: {:?}", ok, err, instr);
-                err = 0;
+                info!("Instruction keeps faulting ({} ok, {} err), continuing: {:?}", ok, unk, instr);
+                unk = 0;
             } else {
-                error!("Instruction keeps faulting ({} ok, {} err), aborting: {:?}", ok, err, instr);
+                error!("Instruction keeps faulting ({} ok, {} err), aborting: {:?}", ok, unk, instr);
                 return Err(DiffError::InstructionKeepsFaulting);
             }
         }
-        if run_instr_single(instr, state)? {
-            ok += 1;
-        } else {
-            err += 1;
+        if gp > GENERAL_FAULT_MAX_RETRIES {
+            if ok > 0 {
+                info!("Instruction keeps causing General Fault ({} ok, {} err), continuing: {:?}", ok, gp, instr);
+                gp = 0;
+            } else {
+                info!("Instruction keeps causing General Fault ({} ok, {} err), aborting: {:?}", ok, gp, instr);
+                return Err(DiffError::InstructionKeepsGeneralFaulting);
+            }
+        }
+        let result = run_instr_single(instr, state)?;
+        match result {
+            RunResult::Ok => {
+                ok += 1;
+            }
+            RunResult::BothGP => {
+                gp += 1;
+            }
+            RunResult::Unknown => {
+                unk += 1;
+            }
         }
     }
 
