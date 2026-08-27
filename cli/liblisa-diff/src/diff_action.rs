@@ -430,7 +430,7 @@ impl DiffCommand {
                             println!("  Previous Result: {:?}", result.diffs);
                         }
                         let mut state = create_state();
-                        let mut counts = RunResultCounts { ok: 0, both_gp: 0, keeps_unaligned: 0, unknown: 0 };
+                        let mut counts = RunResultCounts { ok: 0, both_gp: 0, unaligned: 0, unknown: 0 };
                         for instr in &todo.instructions {
                             let counts_ = run_instr(instr, NUM_STATES_PER_INSTR, &mut state);
                             let counts_ = match counts_ {
@@ -443,13 +443,13 @@ impl DiffCommand {
                             };
                             counts.ok += counts_.ok;
                             counts.both_gp += counts_.both_gp;
-                            counts.keeps_unaligned += counts_.keeps_unaligned;
+                            counts.unaligned += counts_.unaligned;
                             counts.unknown += counts_.unknown;
                         }
                         println!("  Result: OK");
                         println!("    OK: {}", counts.ok);
                         println!("    Both GP: {}", counts.both_gp);
-                        println!("    Keeps Unaligned: {}", counts.keeps_unaligned);
+                        println!("    Unaligned: {}", counts.unaligned);
                         println!("    Unknown: {}", counts.unknown);
                         println!("  Recorded diffs: {:?}", state.diffs);
                     }

@@ -17,7 +17,6 @@ use crate::diff_types::{DiffError, DiffThreadState};
 
 const MAX_MEMORY_ACCESS_OFFSET: u64 = 32;
 const MAX_DIFFS_TO_KEEP: usize = 123;
-const UNALIGNED_ACCESS_MAX_RETRIES: usize = 64*10;  // 1 / 64 is max required alignment, boost chance by *10 to avoid false positives due to bad RNG
 // runtime difference: 2s vs. 24s on a single instruction with 2500 states
 // may only lead to false positives (= more mismatches reported), so is fine to enable
 const MEM_ACCESS_SCAN_GHIDRA_ONLY: bool = true;
@@ -100,7 +99,7 @@ fn try_report_diff(diff: DifferenceType, before: &SystemState<X64Arch>, state: &
 enum RunResult {
     Ok,
     BothGP,
-    KeepsUnaligned,
+    Unaligned,
     Unknown,
 }
 // returns whether the instruction was executed successfully (i.e. no page fault occurred) on both oracles
@@ -122,7 +121,6 @@ fn run_instr_single(
     let map = state.mappable.clone();
     let state_gen = StateGen::new(&accesses, &map)?;
     
-    let mut unaligned_access_counter = 0;
     let mut before = state_gen.randomize_new(&mut state.rng)?;
     loop {
         let mut r1 = state.o1.observe(&before);
@@ -163,42 +161,37 @@ fn run_instr_single(
             }
         }
 
-        // special case: if CPU throws General Fault due to address that is not 64-byte aligned and Ghidra reports
-        // - MemoryAccess with non-64-divisible address (=> unaligned access address),
-        // - MemoryAccess on first byte of page directly after a mapped page (=> flows into next page),
-        // - reports no failure at all (=> access is on already-mapped page)
-        // it's because Ghidra doesn't handle unaligned accesses properly
-        // => randomize new state and try again
-        let is_unaligned_access = match (&r1, &r2) {
-            (Err(OracleError::MemoryAccess(addr)), Err(OracleError::GeneralFault)) => {
-                if addr.as_u64() % 64 != 0 {
-                    // non-64-byte-aligned access address => unaligned access itself
-                    true
-                } else if addr.as_u64() == addr.page::<X64Arch>().start_addr().as_u64() {
-                    // potentially first byte after mapped page with unaligned access
-                    before.memory().iter().any(|(mapped_addr, _, _)| {
-                        let page: Page<X64Arch> = mapped_addr.page();
-                        page.last_address_of_page().as_u64() == addr.page::<X64Arch>().start_addr().as_u64().wrapping_sub(1)
-                    })
-                } else {
-                    false
+        if r2 == Err(OracleError::GeneralFault) {
+            // if both throw general fault, it's probably due to non-canonical address (bits 47-63 differ)
+            if r1 == Err(OracleError::GeneralFault) {
+                debug!("Both oracles threw General Fault, aborting: {:?}", instr);
+                return Ok(RunResult::BothGP);
+            }
+            // if only CPU throws general fault, it's likely due to unaligned access (not checked by Ghidra)
+            let is_unaligned_access = match &r1 {
+                Err(OracleError::MemoryAccess(addr)) => {
+                    if addr.as_u64() % 64 != 0 {
+                        // non-64-byte-aligned access address => unaligned access itself
+                        true
+                    } else if addr.as_u64() == addr.page::<X64Arch>().start_addr().as_u64() {
+                        // potentially first byte after mapped page with unaligned access
+                        before.memory().iter().any(|(mapped_addr, _, _)| {
+                            let page: Page<X64Arch> = mapped_addr.page();
+                            page.last_address_of_page().as_u64() == addr.page::<X64Arch>().start_addr().as_u64().wrapping_sub(1)
+                        })
+                    } else {
+                        false
+                    }
                 }
+                Ok(_) => {
+                    // no additional checks possible here, but best guess is still unaligned access
+                    true
+                }
+                _ => false,
+            };
+            if is_unaligned_access {
+                return Ok(RunResult::Unaligned);
             }
-            (Ok(_), Err(OracleError::GeneralFault)) => {
-                // Ghidra did not report any error, but CPU threw General Fault
-                // we cannot do more precise checks here, but it's likely an unaligned access
-                true
-            }
-            _ => false,
-        };
-        if is_unaligned_access {
-            unaligned_access_counter += 1;
-            if unaligned_access_counter > UNALIGNED_ACCESS_MAX_RETRIES {
-                info!("Instruction keeps causing unaligned access ({} retries), aborting: {:?}", unaligned_access_counter, instr);
-                return Ok(RunResult::KeepsUnaligned);
-            }
-            before = state_gen.randomize_new(&mut state.rng)?;
-            continue;
         }
 
         // special case: page faults on CPU due to non-writable memory while Ghidra is fine might happen due to conditional write
@@ -305,7 +298,7 @@ fn run_instr_single(
         if r1.is_ok() && r2.is_ok() {
             return Ok(RunResult::Ok);
         } else if r1 == Err(OracleError::GeneralFault) && r2 == Err(OracleError::GeneralFault) {
-            return Ok(RunResult::BothGP);
+            return Ok(RunResult::BothGP);  // should've been caught earlier, but just in case
         } else {
             error!("Instruction executed on both oracles, but one of them faulted: {:?}", instr);
             error!("  Ghidra result: {:?}", r1);
@@ -319,7 +312,7 @@ fn run_instr_single(
 pub struct RunResultCounts {
     pub ok: usize,
     pub both_gp: usize,  // might happen due to bad RNG with registers, but also due to hardcoded addresses
-    pub keeps_unaligned: usize,  // might happen due to hardcoded, unaligned addresses
+    pub unaligned: usize,  // might happen due to hardcoded, unaligned addresses
     pub unknown: usize,
 }
 pub fn run_instr(
@@ -329,7 +322,7 @@ pub fn run_instr(
 ) -> Result<RunResultCounts, DiffError> {
     let mut ok = 0;
     let mut gp = 0;
-    let mut keeps_unaligned = 0;
+    let mut unaligned = 0;
     let mut unk = 0;
     for _ in 0..num_states {
         let result = run_instr_single(instr, state)?;
@@ -340,8 +333,8 @@ pub fn run_instr(
             RunResult::BothGP => {
                 gp += 1;
             }
-            RunResult::KeepsUnaligned => {
-                keeps_unaligned += 1;
+            RunResult::Unaligned => {
+                unaligned += 1;
             }
             RunResult::Unknown => {
                 unk += 1;
@@ -349,7 +342,7 @@ pub fn run_instr(
         }
     }
 
-    Ok(RunResultCounts { ok, both_gp: gp, keeps_unaligned, unknown: unk })
+    Ok(RunResultCounts { ok, both_gp: gp, unaligned, unknown: unk })
 }
 
 pub fn create_state() -> DiffThreadState {
