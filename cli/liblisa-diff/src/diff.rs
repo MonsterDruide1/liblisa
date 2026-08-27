@@ -13,13 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::dummy_oracle_source::DoubleCheckedMappableArea;
 use crate::state_diff::{self, Difference, DifferenceType};
-use crate::diff_types::{DiffError, DiffThreadState};
-
-const MAX_MEMORY_ACCESS_OFFSET: u64 = 32;
-const MAX_DIFFS_TO_KEEP: usize = 123;
-// runtime difference: 2s vs. 24s on a single instruction with 2500 states
-// may only lead to false positives (= more mismatches reported), so is fine to enable
-const MEM_ACCESS_SCAN_GHIDRA_ONLY: bool = true;
+use crate::diff_types::{DiffError, DiffThreadState, MAX_DIFFS_TO_KEEP, MAX_MEMORY_ACCESS_OFFSET, MEM_ACCESS_SCAN_GHIDRA_ONLY};
 
 fn translate_ghidra_error(e: &OracleError) -> Option<DiffError> {
     let OracleError::ApiError(e) = e else {
@@ -308,6 +302,27 @@ fn run_instr_single(
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct NumStatesSettings {
+    pub base: usize,
+    pub max: usize,
+    pub mul_if_unaligned: usize,
+}
+impl NumStatesSettings {
+    pub fn is_done(&self, counts: &RunResultCounts) -> bool {
+        if counts.ok >= self.base {
+            return true;
+        }
+        let failed = counts.both_gp + counts.unaligned + counts.unknown;
+        let total = counts.ok + failed;
+        let mut allowed = (self.base + failed).min(self.max);
+        if counts.unaligned > 0 {
+            allowed = allowed.saturating_mul(self.mul_if_unaligned);
+        }
+        total >= allowed
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RunResultCounts {
     pub ok: usize,
@@ -317,32 +332,29 @@ pub struct RunResultCounts {
 }
 pub fn run_instr(
     instr: &Instruction,
-    num_states: usize,
+    num_states: NumStatesSettings,
     state: &mut DiffThreadState
 ) -> Result<RunResultCounts, DiffError> {
-    let mut ok = 0;
-    let mut gp = 0;
-    let mut unaligned = 0;
-    let mut unk = 0;
-    for _ in 0..num_states {
+    let mut counts = RunResultCounts { ok: 0, both_gp: 0, unaligned: 0, unknown: 0 };
+    while !num_states.is_done(&counts) {
         let result = run_instr_single(instr, state)?;
         match result {
             RunResult::Ok => {
-                ok += 1;
+                counts.ok += 1;
             }
             RunResult::BothGP => {
-                gp += 1;
+                counts.both_gp += 1;
             }
             RunResult::Unaligned => {
-                unaligned += 1;
+                counts.unaligned += 1;
             }
             RunResult::Unknown => {
-                unk += 1;
+                counts.unknown += 1;
             }
         }
     }
 
-    Ok(RunResultCounts { ok, both_gp: gp, unaligned, unknown: unk })
+    Ok(counts)
 }
 
 pub fn create_state() -> DiffThreadState {

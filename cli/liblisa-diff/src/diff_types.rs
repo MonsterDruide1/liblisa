@@ -9,12 +9,23 @@ use liblisa::state::random::RandomizationError;
 use liblisa_ghidra_x64_observer::GhidraOracle;
 use liblisa_x64_observer::VmOracle;
 
+use crate::diff::NumStatesSettings;
 use crate::dummy_oracle_source::DoubleCheckedMappableArea;
 use crate::state_diff::Difference;
 
 
+pub const MAX_MEMORY_ACCESS_OFFSET: u64 = 32;
+pub const MAX_DIFFS_TO_KEEP: usize = 123;
+// runtime difference: 2s vs. 24s on a single instruction with 2500 states
+// may only lead to false positives (= more mismatches reported), so is fine to enable
+pub const MEM_ACCESS_SCAN_GHIDRA_ONLY: bool = true;
+
 pub const NUM_INSTRS_PER_ENCODING: usize = 100;
-pub const NUM_STATES_PER_INSTR: usize = 250;
+pub const NUM_STATES_PER_INSTR: NumStatesSettings = NumStatesSettings {
+    base: 250,
+    max: 1000,
+    mul_if_unaligned: 64,
+};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Diff {
