@@ -101,11 +101,14 @@ impl DiffCommand {
         match &self.verb {
             Verb::Create { encodings } => {
                 fs::create_dir_all(&self.dir).unwrap();
+                println!("Reading encodings from {}...", encodings.display());
                 let encodings: Vec<Encoding<X64Arch, SynthesizedComputation>> =
                     serde_json::from_reader(BufReader::new(File::open(&encodings).unwrap())).unwrap();
 
+                println!("Creating diff state for {} encodings...", encodings.len());
                 let synthesis = Diff::create(encodings);
                 let file = File::create(self.state_path()).unwrap();
+                println!("Saving diff state to {}...", self.state_path().display());
                 serde_json::to_writer(file, &synthesis).unwrap();
             }
             Verb::Run { threads, ramp_up } => {
@@ -136,8 +139,10 @@ impl DiffCommand {
                             std::thread::sleep(Duration::from_secs(5));
 
                             if last_save.elapsed() >= Duration::from_secs(60) {
+                                println!("Saving...");
                                 self.save_state(&diff.lock().unwrap().0);
                                 last_save = Instant::now();
+                                println!("Saved!");
                             }
                         }
                     });

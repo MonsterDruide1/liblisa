@@ -294,9 +294,6 @@ fn run_instr_single(
         } else if r1 == Err(OracleError::GeneralFault) && r2 == Err(OracleError::GeneralFault) {
             return Ok(RunResult::BothGP);  // should've been caught earlier, but just in case
         } else {
-            error!("Instruction executed on both oracles, but one of them faulted: {:?}", instr);
-            error!("  Ghidra result: {:?}", r1);
-            error!("  VM result: {:?}", r2);
             return Ok(RunResult::Unknown);
         }
     }
