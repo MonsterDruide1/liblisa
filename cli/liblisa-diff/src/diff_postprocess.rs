@@ -12,8 +12,6 @@ use log::error;
 pub enum ExplainedMismatch {
     /// flag is undefined as per intel manual/XED, CPUs/Ghidra might implement it differently
     UndefinedFlag(String, X64Flag),  // (instruction, flag)
-    /// register is undefined as per intel manual/XED, CPUs/Ghidra might implement it differently
-    UndefinedReg(String),  // (instruction) - register does not matter, as it will be different per instantiation
     /// for instructions using 32-bit registers as target, the upper 32 bits of the registers should be zero-extended,
     /// which is not done properly for some instructions in Ghidra. [Intel, 3.4.1.1]:
     /// > 32-bit operands generate a 32-bit result, zero-extended to a 64-bit result in the destination general-purpose register
@@ -83,6 +81,9 @@ pub enum ExplainedMismatch {
     /// LAR is supposed to read GDT and permission tables, which just don't exist in Ghidra
     /// instead, Ghidra models it as simple read from the address, which is plain wrong and results in many potential mismatches
     LarNotImplemented,
+    /// BSF/BSR specify target register to be undefined (intel, pre-2024-10-11) or unchanged (intel, current ; amd) if source operand is zero
+    /// Ghidra instead overwrites it with zero, which is incorrect
+    BsfBsrSourceOperandZero,
 }
 
 impl ExplainedMismatch {
@@ -90,9 +91,6 @@ impl ExplainedMismatch {
         match self {
             ExplainedMismatch::UndefinedFlag(iclass, flag) => {
                 format!("Undefined flag {:?} in instruction {}", flag, iclass)
-            }
-            ExplainedMismatch::UndefinedReg(iclass) => {
-                format!("Undefined register in instruction {}", iclass)
             }
             ExplainedMismatch::Reg32NotZeroExtended => {
                 "Ghidra does not zero-extend the upper 32 bits of 32-bit register results".to_string()
@@ -139,12 +137,14 @@ impl ExplainedMismatch {
             ExplainedMismatch::LarNotImplemented => {
                 "LAR is supposed to read GDT and permission tables, which just don't exist in Ghidra".to_string()
             }
+            ExplainedMismatch::BsfBsrSourceOperandZero => {
+                "BSF/BSR with a zero source operand should leave the target register undefined, but Ghidra overwrites it with zero".to_string()
+            }
         }
     }
     pub fn name(&self) -> String {
         match self {
             ExplainedMismatch::UndefinedFlag(_, _) => "UndefinedFlag".to_string(),
-            ExplainedMismatch::UndefinedReg(_) => "UndefinedReg".to_string(),
             ExplainedMismatch::Reg32NotZeroExtended => "Reg32NotZeroExtended".to_string(),
             ExplainedMismatch::AfNotImplemented => "AfNotImplemented".to_string(),
             ExplainedMismatch::X87ResetOnMMX => "X87ResetOnMMX".to_string(),
@@ -160,6 +160,7 @@ impl ExplainedMismatch {
             ExplainedMismatch::MovSRegNonZeroExtended => "MovSRegNonZeroExtended".to_string(),
             ExplainedMismatch::RexNopDiscardsHighBytes => "RexNopDiscardsHighBytes".to_string(),
             ExplainedMismatch::LarNotImplemented => "LarNotImplemented".to_string(),
+            ExplainedMismatch::BsfBsrSourceOperandZero => "BsfBsrSourceOperandZero".to_string(),
         }
     }
 }
@@ -405,7 +406,7 @@ unsafe fn try_explain_okmismatch(mismatch: &OkMismatch, state: &SystemState<X64A
                 op.get_reg_value(state).is_some_and(|v| v == 0)
             });
             if is_target_reg && (is_source_mem_0 || is_source_reg_0) && ["BSF", "BSR"].contains(&xed.get_iclass().as_str()) {
-                return Some(ExplainedMismatch::UndefinedReg(xed.get_iclass()));
+                return Some(ExplainedMismatch::BsfBsrSourceOperandZero);
             }
             if is_xadd_register_conflict(state, Some(reg)) {
                 return Some(ExplainedMismatch::RegisterConflict);
