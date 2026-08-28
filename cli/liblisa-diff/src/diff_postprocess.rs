@@ -552,6 +552,7 @@ enum InstrOperandReg {
     SReg(&'static str),
     X87Status,
     StackPush,
+    ControlReg(u8),
     Unk,
 }
 
@@ -787,14 +788,14 @@ impl XedInterface {
         }
 
         match reg {
-            XED_REG_MMX0 => InstrOperandReg::X87Reg(X87Reg::Fpr(0)),
-            XED_REG_MMX1 => InstrOperandReg::X87Reg(X87Reg::Fpr(1)),
-            XED_REG_MMX2 => InstrOperandReg::X87Reg(X87Reg::Fpr(2)),
-            XED_REG_MMX3 => InstrOperandReg::X87Reg(X87Reg::Fpr(3)),
-            XED_REG_MMX4 => InstrOperandReg::X87Reg(X87Reg::Fpr(4)),
-            XED_REG_MMX5 => InstrOperandReg::X87Reg(X87Reg::Fpr(5)),
-            XED_REG_MMX6 => InstrOperandReg::X87Reg(X87Reg::Fpr(6)),
-            XED_REG_MMX7 => InstrOperandReg::X87Reg(X87Reg::Fpr(7)),
+            XED_REG_MMX0 | XED_REG_ST0 => InstrOperandReg::X87Reg(X87Reg::Fpr(0)),
+            XED_REG_MMX1 | XED_REG_ST1 => InstrOperandReg::X87Reg(X87Reg::Fpr(1)),
+            XED_REG_MMX2 | XED_REG_ST2 => InstrOperandReg::X87Reg(X87Reg::Fpr(2)),
+            XED_REG_MMX3 | XED_REG_ST3 => InstrOperandReg::X87Reg(X87Reg::Fpr(3)),
+            XED_REG_MMX4 | XED_REG_ST4 => InstrOperandReg::X87Reg(X87Reg::Fpr(4)),
+            XED_REG_MMX5 | XED_REG_ST5 => InstrOperandReg::X87Reg(X87Reg::Fpr(5)),
+            XED_REG_MMX6 | XED_REG_ST6 => InstrOperandReg::X87Reg(X87Reg::Fpr(6)),
+            XED_REG_MMX7 | XED_REG_ST7 => InstrOperandReg::X87Reg(X87Reg::Fpr(7)),
 
             XED_REG_XMM0 => InstrOperandReg::XmmReg(XmmReg::Reg(0)),
             XED_REG_XMM1 => InstrOperandReg::XmmReg(XmmReg::Reg(1)),
@@ -822,6 +823,23 @@ impl XedInterface {
 
             XED_REG_STACKPUSH => InstrOperandReg::StackPush,
             XED_REG_X87STATUS => InstrOperandReg::X87Status,
+
+            XED_REG_CR0 => InstrOperandReg::ControlReg(0),
+            XED_REG_CR1 => InstrOperandReg::ControlReg(1),
+            XED_REG_CR2 => InstrOperandReg::ControlReg(2),
+            XED_REG_CR3 => InstrOperandReg::ControlReg(3),
+            XED_REG_CR4 => InstrOperandReg::ControlReg(4),
+            XED_REG_CR5 => InstrOperandReg::ControlReg(5),
+            XED_REG_CR6 => InstrOperandReg::ControlReg(6),
+            XED_REG_CR7 => InstrOperandReg::ControlReg(7),
+            XED_REG_CR8 => InstrOperandReg::ControlReg(8),
+            XED_REG_CR9 => InstrOperandReg::ControlReg(9),
+            XED_REG_CR10 => InstrOperandReg::ControlReg(10),
+            XED_REG_CR11 => InstrOperandReg::ControlReg(11),
+            XED_REG_CR12 => InstrOperandReg::ControlReg(12),
+            XED_REG_CR13 => InstrOperandReg::ControlReg(13),
+            XED_REG_CR14 => InstrOperandReg::ControlReg(14),
+            XED_REG_CR15 => InstrOperandReg::ControlReg(15),
 
             _ => {
                 error!("XED register {:?} not mapped to OpReg", reg);
