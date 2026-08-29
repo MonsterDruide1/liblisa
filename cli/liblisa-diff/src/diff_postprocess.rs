@@ -551,6 +551,7 @@ enum InstrOperandReg {
     X87Reg(X87Reg),
     SReg(&'static str),
     X87Status,
+    X87Control,
     StackPush,
     ControlReg(u8),
     Unk,
@@ -822,7 +823,9 @@ impl XedInterface {
             XED_REG_GS => InstrOperandReg::SReg("GS"),
 
             XED_REG_STACKPUSH => InstrOperandReg::StackPush,
+            XED_REG_X87CONTROL => InstrOperandReg::X87Control,
             XED_REG_X87STATUS => InstrOperandReg::X87Status,
+            XED_REG_X87TAG => InstrOperandReg::X87Reg(X87Reg::TagWord),
 
             XED_REG_CR0 => InstrOperandReg::ControlReg(0),
             XED_REG_CR1 => InstrOperandReg::ControlReg(1),
