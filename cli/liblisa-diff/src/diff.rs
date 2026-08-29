@@ -241,7 +241,17 @@ fn run_instr_single(
                 addrs.extend(state.o1.scan_memory_accesses(&before).expect("scan_memory_accesses should not fail if observe succeeded"));
             }
             if r2.is_ok() && (!MEM_ACCESS_SCAN_GHIDRA_ONLY || r1.is_err()) {
-                addrs.extend(state.o2.scan_memory_accesses(&before).expect("scan_memory_accesses should not fail if observe succeeded"));
+                let accesses = state.o2.scan_memory_accesses(&before);
+                if accesses == Err(OracleError::Unreliable) {
+                    // Ghidra threw error, but CPU was fine => probably some "mapped-to-existing-page" address
+                    // however, sometimes the CPU also struggles with that, so we need to handle "Unreliable"
+                    // example: idev [rax] with rax and instruction mapped to the same page
+                    // simplest way: randomize new state and try again
+                    before = state_gen.randomize_new(&mut state.rng)?;
+                    restart = true;
+                    break;
+                }
+                addrs.extend(accesses.expect("scan_memory_accesses should not fail if observe succeeded"));
             }
             
             for addr in addrs {
