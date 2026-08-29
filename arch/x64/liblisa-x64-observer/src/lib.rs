@@ -534,7 +534,7 @@ impl ObservationRequest for MemoryAccessDebugScan<'_> {
             Ok(results)
         } else {
             // TODO: Store a reference outcome and just compare with that instead
-            println!("Found: {gpregs:?} {debug_regs:?} when doing memory scan for {:?}", self.state);
+            //println!("Found: {gpregs:?} {debug_regs:?} when doing memory scan for {:?}", self.state);
             // for data in _memory.iter() {
             //     // let offset = (addr.as_u64() & 0b1111_1111_1111) as usize;
             //     // let mem_index = self.index_translation[index];
