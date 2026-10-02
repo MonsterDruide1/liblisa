@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::error::Error;
 use std::fs::{self, File};
 use std::io::BufReader;
@@ -382,15 +382,12 @@ impl DiffCommand {
                         },
                     };
                     let instr_class = unsafe {
-                        let mut classes = item.instructions.iter().map(|b| {
+                        item.instructions.iter().map(|b| {
                             XedInterface::new(b.bytes()).unwrap().get_iclass()
-                        });
-                        let first = classes.next().unwrap();
-                        if classes.all(|c| c == first) {
-                            first
-                        } else {
-                            "<multiple>".to_string()
-                        }
+                        }).collect::<BTreeSet<_>>()
+                        .into_iter()
+                        .collect::<Vec<_>>()
+                        .join(", ")
                     };
                     ResultItem {
                         description: item.description,
