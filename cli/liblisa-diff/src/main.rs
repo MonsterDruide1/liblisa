@@ -11,6 +11,7 @@ pub mod diff_work;
 pub mod diff;
 pub mod diff_types;
 pub mod diff_postprocess;
+pub mod xed;
 
 #[derive(clap::Parser)]
 enum CliCommand {
