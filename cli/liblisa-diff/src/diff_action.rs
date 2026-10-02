@@ -389,7 +389,7 @@ impl DiffCommand {
                         if classes.all(|c| c == first) {
                             first
                         } else {
-                            panic!("Item {} has multiple instruction classes, cannot export results", item.description);
+                            "<multiple>".to_string()
                         }
                     };
                     ResultItem {
