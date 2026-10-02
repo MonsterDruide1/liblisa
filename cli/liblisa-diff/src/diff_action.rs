@@ -18,6 +18,7 @@ use serde::Serialize;
 use crate::diff::{RunResultCounts, run_instr};
 use crate::diff_postprocess::{ExplainedMismatch, UnexplainedMismatch, try_explain_diff};
 use crate::diff_work::DiffRuntimeData;
+use crate::xed::XedInterface;
 use crate::{diff::create_state, diff_postprocess::postprocess_all, diff_types::DiffItem};
 use crate::diff_types::{Diff, DiffError, NUM_STATES_PER_INSTR};
 use crate::state_diff;
@@ -350,6 +351,7 @@ impl DiffCommand {
                 #[derive(Serialize)]
                 struct ResultItem {
                     description: String,
+                    instr_class: String,
                     result: Result<(Vec<ExplainedMismatch>, Vec<UnexplainedMismatch>), DiffError>,
                 }
 
@@ -379,8 +381,20 @@ impl DiffCommand {
                             Err(e)
                         },
                     };
+                    let instr_class = unsafe {
+                        let mut classes = item.instructions.iter().map(|b| {
+                            XedInterface::new(b.bytes()).unwrap().get_iclass()
+                        });
+                        let first = classes.next().unwrap();
+                        if classes.all(|c| c == first) {
+                            first
+                        } else {
+                            panic!("Item {} has multiple instruction classes, cannot export results", item.description);
+                        }
+                    };
                     ResultItem {
                         description: item.description,
+                        instr_class,
                         result,
                     }
                 }).collect::<Vec<_>>();

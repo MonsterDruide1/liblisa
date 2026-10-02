@@ -102,7 +102,7 @@ pub unsafe fn c2s(ptr: *const i8) -> String {
 }
 
 impl XedInterface {
-    pub unsafe fn init() {
+    unsafe fn init() {
         static INIT: std::sync::Once = std::sync::Once::new();
         INIT.call_once(|| {
             xed_tables_init();
