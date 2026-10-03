@@ -139,7 +139,7 @@ impl DiffCommand {
                         while running.load(Ordering::SeqCst) {
                             std::thread::sleep(Duration::from_secs(5));
 
-                            if last_save.elapsed() >= Duration::from_secs(60) {
+                            if last_save.elapsed() >= Duration::from_secs(5*60) {
                                 println!("Saving...");
                                 self.save_state(&diff.lock().unwrap().0);
                                 last_save = Instant::now();
