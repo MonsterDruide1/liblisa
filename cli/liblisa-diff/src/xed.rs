@@ -127,6 +127,10 @@ impl XedInterface {
     pub unsafe fn get_iclass(&self) -> String {
         return c2s(xed_iclass_enum_t2str(xed_decoded_inst_get_iclass(&self.inst)));
     }
+    pub unsafe fn get_iclass_and_id(&self) -> String {
+        let iclass = xed_decoded_inst_get_iclass(&self.inst);
+        return format!("{}[{}]", c2s(xed_iclass_enum_t2str(iclass)), iclass);
+    }
 
     pub unsafe fn get_undefined_flags(&self) -> Vec<X64Flag> {
         let rflags_info = xed_decoded_inst_get_rflags_info(&self.inst);

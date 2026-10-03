@@ -383,7 +383,7 @@ impl DiffCommand {
                     };
                     let instr_class = unsafe {
                         item.instructions.iter().map(|b| {
-                            XedInterface::new(b.bytes()).unwrap().get_iclass()
+                            XedInterface::new(b.bytes()).unwrap().get_iclass_and_id()
                         }).collect::<BTreeSet<_>>()
                         .into_iter()
                         .collect::<Vec<_>>()
