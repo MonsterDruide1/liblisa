@@ -28,10 +28,11 @@ impl CliCommand {
             CliCommand::Test { instr } => {
                 let mut state = create_state();
                 println!("Running instruction...");
-                println!("{:?}", run_instr(&instr, diff_types::NUM_STATES_PER_INSTR, &mut state));
-                println!("Observed diffs: {:?}", state.diffs);
+                let mut diffs = vec![];
+                println!("{:?}", run_instr(&instr, diff_types::NUM_STATES_PER_INSTR, &mut state, &mut diffs));
+                println!("Observed diffs: {:?}", diffs);
                 println!("First diff as json:");
-                if let Some(x) = state.diffs.get(0) {
+                if let Some(x) = diffs.get(0) {
                     serde_json::to_writer(std::io::stdout(), &x.example_before).unwrap();
                 }
                 println!("");
@@ -40,7 +41,7 @@ impl CliCommand {
                     let (explained, unexplained) = diff_postprocess::postprocess_all(
                         &diff_types::Diff { items: vec![diff_types::DiffItem {
                             instructions: vec![], description: "<missing>".to_string(),
-                            result: Some(diff_types::DiffResult {diffs: Ok(state.diffs)})
+                            result: Some(diff_types::DiffResult {diffs: Ok(diffs)})
                         }], runtime_ms: 0, total_ms: 0 },
                     );
                     println!("Explained diffs: {:?}", explained);

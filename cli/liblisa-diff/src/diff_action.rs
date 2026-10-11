@@ -39,12 +39,6 @@ enum Verb {
     Run {
         #[clap(long)]
         threads: Option<usize>,
-
-        #[clap(
-            long,
-            help = "ramps the number of threads up to this value by adding 4 threads every 15 minutes"
-        )]
-        ramp_up: Option<usize>,
     },
     Status {
         #[clap(long)]
@@ -112,7 +106,7 @@ impl DiffCommand {
                 println!("Saving diff state to {}...", self.state_path().display());
                 serde_json::to_writer(file, &synthesis).unwrap();
             }
-            Verb::Run { threads, ramp_up } => {
+            Verb::Run { threads } => {
                 println!("Loading base data...");
                 let file = File::open(self.state_path()).unwrap();
                 let diff: Mutex<(Diff, DiffRuntimeData)> = Mutex::new({
@@ -156,7 +150,6 @@ impl DiffCommand {
                         // TODO: Automatically determine the right size
                         pool.resize(threads.unwrap_or(2));
 
-                        let mut last_ramp_up = Instant::now();
                         loop {
                             match recv.recv_timeout(Duration::from_secs(5)) {
                                 Ok(line) => {
@@ -169,10 +162,6 @@ impl DiffCommand {
                                                 println!("Resizing thread pool to {num}...");
                                                 pool.resize(num);
                                                 println!("Thread pool resized to {num}");
-
-                                                if ramp_up.as_ref().is_some() {
-                                                    println!("Ramp-up cancelled because of manual input");
-                                                }
                                             },
                                             Err(e) => println!("{e}"),
                                         },
@@ -186,16 +175,6 @@ impl DiffCommand {
                                 },
                                 Err(RecvTimeoutError::Disconnected) => break,
                                 Err(RecvTimeoutError::Timeout) => (),
-                            }
-
-                            if last_ramp_up.elapsed() >= Duration::from_secs(30 * 60) {
-                                if let Some(ramp_up) = ramp_up {
-                                    let current = pool.current_num_threads();
-                                    let new_num = (current + 4).min(*ramp_up);
-                                    pool.resize(new_num);
-                                }
-
-                                last_ramp_up = Instant::now();
                             }
                         }
 
@@ -452,8 +431,9 @@ impl DiffCommand {
                         }
                         let mut state = create_state();
                         let mut counts = RunResultCounts { ok: 0, both_gp: 0, unaligned: 0, unknown: 0 };
+                        let mut diffs = vec![];
                         for instr in &todo.instructions {
-                            let counts_ = run_instr(instr, NUM_STATES_PER_INSTR, &mut state);
+                            let counts_ = run_instr(instr, NUM_STATES_PER_INSTR, &mut state, &mut diffs);
                             let counts_ = match counts_ {
                                 Ok(counts_) => counts_,
                                 Err(e) => {
@@ -472,7 +452,7 @@ impl DiffCommand {
                         println!("    Both GP: {}", counts.both_gp);
                         println!("    Unaligned: {}", counts.unaligned);
                         println!("    Unknown: {}", counts.unknown);
-                        println!("  Recorded diffs: {:?}", state.diffs);
+                        println!("  Recorded diffs: {:?}", diffs);
                     }
                 }
             }

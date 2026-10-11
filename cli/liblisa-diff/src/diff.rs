@@ -51,7 +51,7 @@ fn try_add_memory_mapping(state: &mut SystemState<X64Arch>, addr: Addr, rng: &mu
     true
 }
 
-fn try_report_diff(diff: DifferenceType, before: &SystemState<X64Arch>, state: &mut DiffThreadState) -> bool {
+fn try_report_diff(diff: DifferenceType, before: &SystemState<X64Arch>, diffs: &mut Vec<Difference>) -> bool {
     if let DifferenceType::ErrErr(e1, e2) = &diff {
         match (e1, e2) {
             (OracleError::MemoryAccess(addr1), OracleError::MemoryAccess(addr2)) => {
@@ -66,24 +66,24 @@ fn try_report_diff(diff: DifferenceType, before: &SystemState<X64Arch>, state: &
     }
 
     // if diff has already been reported, do not report again
-    if state.diffs.iter().any(|d| d.diff_type.contains(&diff)) {
+    if diffs.iter().any(|d| d.diff_type.contains(&diff)) {
         return false;
     }
 
     debug!("Found diff: {}, adding to existing list:", diff);
-    for d in &state.diffs {
+    for d in diffs.iter() {
         debug!("  {:?}", d.diff_type);
     }
     debug!("  {:?}", before);
 
-    if state.diffs.len() > MAX_DIFFS_TO_KEEP {
-        debug!("  ... (truncated, {} diffs total)", state.diffs.len());
+    if diffs.len() > MAX_DIFFS_TO_KEEP {
+        debug!("  ... (truncated, {} diffs total)", diffs.len());
         return true;
     }
 
     // seems good, delete smaller existing diffs and report this one
-    state.diffs.retain(|d| !diff.contains(&d.diff_type));
-    state.diffs.push(Difference {
+    diffs.retain(|d| !diff.contains(&d.diff_type));
+    diffs.push(Difference {
         diff_type: diff,
         example_before: before.clone(),
     });
@@ -100,6 +100,7 @@ enum RunResult {
 fn run_instr_single(
     instr: &Instruction,
     state: &mut DiffThreadState,
+    diffs: &mut Vec<Difference>,
 ) -> Result<RunResult, DiffError> {
     let accesses: MemoryAccesses<X64Arch> = MemoryAccesses {
         instr: *instr,
@@ -212,7 +213,7 @@ fn run_instr_single(
         // if mapping cannot be added, randomize new state and try again
         if let Err(OracleError::MemoryAccess(addr)) = r1 {
             if let Some(result) = state_diff::compare(&r1, &r2) {
-                try_report_diff(result, &before, state);
+                try_report_diff(result, &before, diffs);
             }
             if !try_add_memory_mapping(&mut before, addr, &mut state.rng) {
                 before = state_gen.randomize_new(&mut state.rng)?;
@@ -221,7 +222,7 @@ fn run_instr_single(
         }
         if let Err(OracleError::MemoryAccess(addr)) = r2 {
             if let Some(result) = state_diff::compare(&r1, &r2) {
-                try_report_diff(result, &before, state);
+                try_report_diff(result, &before, diffs);
             }
             if !try_add_memory_mapping(&mut before, addr, &mut state.rng) {
                 before = state_gen.randomize_new(&mut state.rng)?;
@@ -290,7 +291,7 @@ fn run_instr_single(
 
         let result = state_diff::compare(&r1, &r2);
         if let Some(result) = result {
-            try_report_diff(result, &before, state);
+            try_report_diff(result, &before, diffs);
         }
 
         
@@ -340,11 +341,12 @@ pub struct RunResultCounts {
 pub fn run_instr(
     instr: &Instruction,
     num_states: NumStatesSettings,
-    state: &mut DiffThreadState
+    state: &mut DiffThreadState,
+    diffs: &mut Vec<Difference>,
 ) -> Result<RunResultCounts, DiffError> {
     let mut counts = RunResultCounts { ok: 0, both_gp: 0, unaligned: 0, unknown: 0 };
     while !num_states.is_done(&counts) {
-        let result = run_instr_single(instr, state)?;
+        let result = run_instr_single(instr, state, diffs)?;
         match result {
             RunResult::Ok => {
                 counts.ok += 1;
@@ -372,7 +374,6 @@ pub fn create_state() -> DiffThreadState {
         o1,
         o2,
         mappable,
-        diffs: vec![],
         rng: Xoshiro256PlusPlus::seed_from_u64(rand::thread_rng().r#gen())
     }
 }

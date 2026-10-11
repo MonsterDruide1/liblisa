@@ -51,7 +51,6 @@ pub struct DiffThreadState {
     pub o1: GhidraOracle,
     pub o2: VmOracle,
     pub mappable: DoubleCheckedMappableArea<<GhidraOracle as Oracle<X64Arch>>::MappableArea, <VmOracle as Oracle<X64Arch>>::MappableArea>,
-    pub diffs: Vec<Difference>,
     pub rng: Xoshiro256PlusPlus,
 }
 

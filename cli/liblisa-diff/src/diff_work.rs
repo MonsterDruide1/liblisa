@@ -28,8 +28,9 @@ impl DiffRequest {
         let mut state = &mut oracle.state;
 
         let mut counts = RunResultCounts { ok: 0, both_gp: 0, unaligned: 0, unknown: 0 };
+        let mut diffs = vec![];
         for instr in &self.item.instructions {
-            let counts_ = run_instr(instr, NUM_STATES_PER_INSTR, &mut state);
+            let counts_ = run_instr(instr, NUM_STATES_PER_INSTR, &mut state, &mut diffs);
             let counts_ = match counts_ {
                 Ok(counts_) => counts_,
                 Err(e) => {
@@ -51,7 +52,6 @@ impl DiffRequest {
         if counts.ok == 0 && counts.unaligned > 0 {
             return DiffResult { diffs: Err(DiffError::UnalignedAccessKeepsFaulting) };
         }
-        let diffs = std::mem::take(&mut state.diffs);
         return DiffResult { diffs: Ok(diffs) };
     }
 }
