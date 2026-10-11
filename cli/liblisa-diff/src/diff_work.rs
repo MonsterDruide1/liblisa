@@ -5,8 +5,6 @@ use liblisa::encoding::Encoding;
 use liblisa::oracle::Oracle;
 use liblisa::semantics::default::computation::SynthesizedComputation;
 use log::error;
-use rand::Rng;
-use serde::{Deserialize, Serialize};
 
 use liblisa_libcli::threadpool::work::Work;
 
@@ -21,8 +19,8 @@ pub struct DiffRequest {
     pub item: DiffItem,
 }
 impl DiffRequest {
-    pub fn diff<A: Arch, O: Oracle<A>, R: Rng>(
-        &self, oracle: &mut O, rng: &mut R,
+    pub fn diff<A: Arch, O: Oracle<A>>(
+        &self, oracle: &mut O,
     ) -> DiffResult {
         let oracle: &mut DummyOracle<X64Arch> = unsafe {
             &mut *(oracle as *mut O as *mut DummyOracle<X64Arch>)
@@ -58,11 +56,8 @@ impl DiffRequest {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct DiffArtifact {
-    pub ms_taken: u128,
-    pub result: DiffResult,
-}
+#[derive(Clone, Debug)]
+pub struct DiffArtifact {}
 
 pub struct DiffRuntimeData {
     last_check: Instant,
@@ -88,20 +83,13 @@ impl<A: Arch> Work<A, ()> for Diff
     type Artifact = DiffArtifact;
 
     fn next(&mut self, data: &mut Self::RuntimeData) -> Option<Self::Request> {
-        let next_entry = data.todo.iter().find(|e| !data.pending.contains(e));
-
-        next_entry.and_then(|&item_index| {
-            self.items.get(item_index).cloned().map(|item| {
-                let request = DiffRequest {
-                    at: Instant::now(),
-                    item_index,
-                    item,
-                };
-
-                data.pending.push(item_index);
-
-                request
-            })
+        let next_entry = *data.todo.iter().find(|e| !data.pending.contains(e))?;
+        let item = self.items.get(next_entry)?.clone();
+        data.pending.push(next_entry);
+        Some(DiffRequest {
+            at: Instant::now(),
+            item_index: next_entry,
+            item,
         })
     }
 
@@ -115,6 +103,21 @@ impl<A: Arch> Work<A, ()> for Diff
         let ms_taken = request.at.elapsed().as_millis();
         self.total_ms += ms_taken;
 
+        self.items[request.item_index].result = Some(result);
+        data.todo.remove(
+            data.todo
+                .iter()
+                .position(|&item| item == request.item_index)
+                .unwrap(),
+        );
+
+        Some(DiffArtifact {})
+    }
+
+    fn run<O: Oracle<A>>(oracle: &mut O, _cache: &(), request: &Self::Request) -> Self::Result {
+        println!("Diffing [{}] {}", request.item_index, request.item.description);
+        let result = request.diff(oracle);
+
         let result_type = match &result.diffs {
             Ok(diffs) => format!("{} diffs", diffs.len()),
             Err(e) => format!("Error: {}", e),
@@ -127,23 +130,7 @@ impl<A: Arch> Work<A, ()> for Diff
             result_type,
         );
 
-        self.items[request.item_index].result = Some(result.clone());
-        data.todo.remove(
-            data.todo
-                .iter()
-                .position(|&item| item == request.item_index)
-                .unwrap(),
-        );
-
-        Some(DiffArtifact {
-            ms_taken,
-            result,
-        })
-    }
-
-    fn run<O: Oracle<A>>(oracle: &mut O, _cache: &(), request: &Self::Request) -> Self::Result {
-        println!("Diffing [{}] {}", request.item_index, request.item.description);
-        request.diff(oracle, &mut rand::thread_rng())
+        result
     }
 }
 

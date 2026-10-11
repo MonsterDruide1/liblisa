@@ -1,6 +1,6 @@
 use liblisa_ghidra_x64_observer::GhidraOracle;
 use liblisa_x64_observer::VmOracleSource;
-use log::{debug, error, info, trace};
+use log::{debug, info, trace};
 use rand::{Rng, SeedableRng};
 use rand_xoshiro::Xoshiro256PlusPlus;
 
