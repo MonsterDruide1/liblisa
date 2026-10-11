@@ -176,6 +176,11 @@ impl DiffCommand {
                                             },
                                             Err(e) => println!("{e}"),
                                         },
+                                        ["save"] => {
+                                            println!("Saving...");
+                                            self.save_state(&diff.lock().unwrap().0);
+                                            println!("Saved!");
+                                        },
                                         _ => println!("Commands available: stop"),
                                     }
                                 },
