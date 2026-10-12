@@ -271,6 +271,8 @@ fn run_instr_single(
                     // try_add_memory_mapping adds range, and accesses might contain duplicates, so just start over and re-scan
                     need_more_mappings = true;
                     any_new_mappings = true;
+                    // bugfix: xadd is using UB memory to potentially survive, so a new mapping can suddenly cause crashes
+                    restart = true;
                 }
             }
             // for restart: do not try collecting more mappings here, as new state must first be checked with MemoryAccess errors
